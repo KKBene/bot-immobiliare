@@ -1,0 +1,18 @@
+# Dipendenze complete per scraper + outreach + test.
+# Usato da: cron GitHub Actions + dev locale.
+# Streamlit Cloud non installa questo file.
+
+-r requirements.txt
+
+# Scraping
+requests>=2.32
+curl_cffi>=0.7
+beautifulsoup4>=4.12
+lxml>=5.2
+
+# Notify
+# (requests è già sopra)
+
+# Test
+pytest>=8.2
+pytest-vcr>=1.0

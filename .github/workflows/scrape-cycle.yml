@@ -32,7 +32,7 @@ jobs:
           cache: pip
 
       - name: Install deps
-        run: pip install -r requirements.txt
+        run: pip install -r requirements-bot.txt
 
       - name: Run cycle (paginazione dinamica + mark stale)
         run: python scripts/run_cycle.py --max-pages 15 --stale-hours 48
