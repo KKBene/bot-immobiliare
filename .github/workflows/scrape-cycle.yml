@@ -1,0 +1,38 @@
+# GitHub Actions: scrape ogni 3 ore.
+# Setup:
+#   1) Push del repo su GitHub
+#   2) Settings → Secrets and variables → Actions:
+#      SUPABASE_URL, SUPABASE_SERVICE_KEY
+#   3) Verificare che Actions sia abilitato
+
+name: scrape-cycle
+
+on:
+  schedule:
+    # ogni 3 ore (UTC). GitHub Actions può ritardare di qualche minuto.
+    - cron: "0 */3 * * *"
+  workflow_dispatch:  # trigger manuale
+
+jobs:
+  cycle:
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+    env:
+      SUPABASE_URL: ${{ secrets.SUPABASE_URL }}
+      SUPABASE_SERVICE_KEY: ${{ secrets.SUPABASE_SERVICE_KEY }}
+      SUPABASE_ANON_KEY: ${{ secrets.SUPABASE_ANON_KEY }}
+      TELEGRAM_BOT_TOKEN: ${{ secrets.TELEGRAM_BOT_TOKEN }}
+      TELEGRAM_CHAT_ID: ${{ secrets.TELEGRAM_CHAT_ID }}
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+          cache: pip
+
+      - name: Install deps
+        run: pip install -r requirements.txt
+
+      - name: Run cycle (paginazione dinamica + mark stale)
+        run: python scripts/run_cycle.py --max-pages 15 --stale-hours 48

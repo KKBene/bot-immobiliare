@@ -1,0 +1,214 @@
+"""Scraper Immobiliare.it.
+
+Strategia: Immobiliare è protetto da DataDome. Si bypassa con curl_cffi che
+impersona il TLS fingerprint di Chrome. Il payload utile è il JSON dentro
+<script id="__NEXT_DATA__"> — niente parsing HTML.
+
+Path al payload: props.pageProps.dehydratedState.queries[0].state.data.results
+"""
+
+from __future__ import annotations
+
+import json
+import re
+from typing import Iterable, Optional
+
+from curl_cffi import requests as creq
+
+from src.anti_detect import Backoff, TransientError, get_circuit_breaker
+from src.models import Listing
+
+_cb_immobiliare = get_circuit_breaker("immobiliare", threshold=3, pause_seconds=1800)
+_backoff = Backoff(max_attempts=3, base_sleep=2.0, factor=2.0, jitter_pct=0.25)
+
+BASE_URL = "https://www.immobiliare.it"
+LIST_URL_TEMPLATE = BASE_URL + "/affitto-case/{city}/"
+
+NEXT_DATA_RE = re.compile(
+    r'<script id="__NEXT_DATA__"[^>]*>(.*?)</script>', re.DOTALL
+)
+
+# Regex per estrarre contatti dal testo libero (descrizione / titolo).
+#
+# Strategia: la regex è permissiva (cattura sequenze di cifre intervallate da
+# separatori). La validazione finale è delegata a normalize_phone_it() che
+# scarta lunghezze fuori range italiano (8-11 cifre dopo prefisso).
+#
+# Prefisso opzionale: +39 / 39 / 0039
+# Trigger: cellulare 3XX o fisso 0X / 0XX / 0XXX (Milano=02, Roma=06, ecc.)
+# Separatori ammessi all'interno: space, dot, dash, slash
+PHONE_RE = re.compile(
+    r"""(?:\+?39[\s.\-]?|0039[\s.\-]?)?     # prefisso internazionale opz
+        (?:3\d{2}|0\d{1,3})                  # cell 3XX o fisso 0X..0XXX
+        [\s.\-/]?
+        (?:\d[\s.\-/]?){5,9}                 # 5-9 cifre con separatori
+        \d                                   # cifra finale
+    """,
+    re.VERBOSE,
+)
+EMAIL_RE = re.compile(r"[\w.+-]+@[\w-]+\.[\w.-]+")
+
+
+class ImmobiliareScraper:
+    """Scraper della listing page di Immobiliare per una città."""
+
+    def __init__(self, city: str = "milano", impersonate: str = "chrome"):
+        self.city = city
+        self.impersonate = impersonate
+
+    # ---------- fetch ----------
+
+    def list_url(self, page: int = 1) -> str:
+        url = LIST_URL_TEMPLATE.format(city=self.city)
+        if page > 1:
+            url += f"?pag={page}"
+        return url
+
+    @_backoff.wrap(circuit=_cb_immobiliare)
+    def fetch_list_html(self, page: int = 1, timeout: int = 25) -> str:
+        """GET con retry+backoff+circuit-breaker."""
+        url = self.list_url(page)
+        r = creq.get(url, impersonate=self.impersonate, timeout=timeout)
+        if r.status_code in (403, 429) or 500 <= r.status_code < 600:
+            raise TransientError(f"status={r.status_code} for {url}")
+        r.raise_for_status()
+        return r.text
+
+    # ---------- parse ----------
+
+    @staticmethod
+    def extract_next_data(html: str) -> dict:
+        m = NEXT_DATA_RE.search(html)
+        if not m:
+            raise ValueError("__NEXT_DATA__ non trovato (anti-bot o pagina cambiata)")
+        return json.loads(m.group(1))
+
+    @staticmethod
+    def _results_from_next_data(data: dict) -> list[dict]:
+        try:
+            return data["props"]["pageProps"]["dehydratedState"]["queries"][0][
+                "state"
+            ]["data"]["results"]
+        except (KeyError, IndexError, TypeError) as e:
+            raise ValueError(f"Path ai results non valido: {e}") from e
+
+    @staticmethod
+    def _parse_surface(raw: Optional[str]) -> Optional[int]:
+        """'94 m²' -> 94, None -> None."""
+        if not raw:
+            return None
+        m = re.search(r"(\d+)", raw)
+        return int(m.group(1)) if m else None
+
+    @classmethod
+    def _classify_advertiser(cls, advertiser: dict) -> tuple[str, Optional[str]]:
+        """Restituisce (type, displayName).
+
+        - se c'è una agency con label="agenzia" / "agente immobiliare" -> agency
+        - altrimenti private
+        """
+        agency = advertiser.get("agency") if advertiser else None
+        if not agency:
+            return ("private", None)
+        label = (agency.get("label") or "").lower()
+        if "privato" in label:
+            return ("private", agency.get("displayName"))
+        return ("agency", agency.get("displayName"))
+
+    @classmethod
+    def _phones_from_advertiser(cls, advertiser: dict) -> list[str]:
+        if not advertiser:
+            return []
+        out: list[str] = []
+        agency = advertiser.get("agency") or {}
+        for p in agency.get("phones", []) or []:
+            v = p.get("value")
+            if v:
+                out.append(v)
+        supervisor = advertiser.get("supervisor") or {}
+        for p in supervisor.get("phones", []) or []:
+            v = p.get("value")
+            if v and v not in out:
+                out.append(v)
+        return out
+
+    @classmethod
+    def parse_listings(cls, html: str) -> list[Listing]:
+        data = cls.extract_next_data(html)
+        results = cls._results_from_next_data(data)
+        listings: list[Listing] = []
+
+        for r in results:
+            re_ = r.get("realEstate") or {}
+            seo = r.get("seo") or {}
+            props = re_.get("properties") or []
+            prop = props[0] if props else {}
+
+            advertiser = re_.get("advertiser") or {}
+            adv_type, adv_name = cls._classify_advertiser(advertiser)
+
+            price_obj = re_.get("price") or {}
+            location = prop.get("location") or {}
+
+            title = prop.get("caption") or seo.get("anchor")
+            description = prop.get("description")
+            text_blob = " ".join(filter(None, [title, description]))
+
+            raw_phones = list(set(PHONE_RE.findall(text_blob)))
+            raw_emails = list(set(EMAIL_RE.findall(text_blob)))
+
+            listing = Listing(
+                portal="immobiliare",
+                external_id=str(re_.get("id") or ""),
+                url=seo.get("url") or "",
+                title=title,
+                description=description,
+                price_eur=price_obj.get("value"),
+                surface_m2=cls._parse_surface(prop.get("surface")),
+                rooms=str(prop.get("rooms")) if prop.get("rooms") else None,
+                bathrooms=str(prop.get("bathrooms")) if prop.get("bathrooms") else None,
+                floor=(prop.get("floor") or {}).get("abbreviation"),
+                typology=(prop.get("typology") or {}).get("name"),
+                address=location.get("address"),
+                city=location.get("city"),
+                macrozone=location.get("macrozone"),
+                microzone=location.get("microzone"),
+                latitude=location.get("latitude"),
+                longitude=location.get("longitude"),
+                advertiser_type=adv_type,
+                advertiser_name=adv_name,
+                phones=cls._phones_from_advertiser(advertiser),
+                raw_phones_in_text=raw_phones,
+                raw_emails_in_text=raw_emails,
+                visibility=re_.get("visibility"),
+                contract=re_.get("contract"),
+            )
+            listings.append(listing)
+        return listings
+
+    # ---------- convenience ----------
+
+    def scrape_page(self, page: int = 1) -> list[Listing]:
+        html = self.fetch_list_html(page=page)
+        return self.parse_listings(html)
+
+    def scrape_pages(
+        self,
+        start: int = 1,
+        end: int = 1,
+        sleep_between: float = 1.5,
+    ) -> Iterable[Listing]:
+        """Genera annunci da più pagine; ferma se incontra una pagina vuota.
+
+        Lo sleep evita di battere troppo Immobiliare (curl_cffi è veloce ma
+        bombardarli accende DataDome). 1.5s è un compromesso conservativo.
+        """
+        import time
+        for page in range(start, end + 1):
+            listings = self.scrape_page(page)
+            if not listings:
+                return
+            for l in listings:
+                yield l
+            if page < end:
+                time.sleep(sleep_between)

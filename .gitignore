@@ -1,0 +1,23 @@
+.env
+.env.local
+.env.*
+!.env.example
+
+# Streamlit secrets (per cloud uso st.secrets via UI)
+.streamlit/secrets.toml
+!.streamlit/secrets.toml.example
+
+# Python
+*.pyc
+__pycache__/
+.venv/
+venv/
+.pytest_cache/
+
+# OS
+.DS_Store
+*.log
+
+# Test fixtures (HTML grandi, rigenerabili)
+tests/fixtures/*.html
+!tests/fixtures/.gitkeep
