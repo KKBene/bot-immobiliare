@@ -33,6 +33,10 @@ sel_adv = st.sidebar.multiselect(
     help="private = obiettivo principale del bot"
 )
 
+# Status
+statuses = sorted(df["status"].dropna().unique().tolist()) if "status" in df.columns else ["active"]
+sel_status = st.sidebar.multiselect("Status", statuses, default=["active"] if "active" in statuses else statuses)
+
 prices = df["price_eur"].dropna()
 if not prices.empty:
     pmin, pmax = int(prices.min()), int(prices.max())
@@ -56,6 +60,8 @@ if sel_portals:
     filt = filt[filt["portal"].isin(sel_portals)]
 if sel_adv:
     filt = filt[filt["advertiser_type"].isin(sel_adv)]
+if sel_status and "status" in filt.columns:
+    filt = filt[filt["status"].isin(sel_status)]
 if price_range:
     pmin, pmax = price_range
     filt = filt[(filt["price_eur"].isna()) |

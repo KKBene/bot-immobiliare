@@ -154,3 +154,39 @@ def setup_page(title: str, icon: str = "🏠") -> None:
         initial_sidebar_state="expanded",
     )
     require_auth()
+
+
+# ============================================================================
+# Helpers per link Chiama / WhatsApp / Share
+# ============================================================================
+
+def call_url(phone_e164: str | None) -> str | None:
+    """tel: link cliccabile su mobile."""
+    if not phone_e164:
+        return None
+    return f"tel:{phone_e164}"
+
+
+def whatsapp_url(phone_e164: str | None, message: str | None = None) -> str | None:
+    """wa.me link con messaggio precompilato (URL-encoded)."""
+    if not phone_e164:
+        return None
+    # wa.me vuole il numero senza '+'
+    num = phone_e164.lstrip("+")
+    url = f"https://wa.me/{num}"
+    if message:
+        from urllib.parse import quote
+        url += f"?text={quote(message)}"
+    return url
+
+
+def telegram_share_url(text: str, url: str | None = None) -> str:
+    """Share intent Telegram (utile per inoltrarti i lead in chat)."""
+    from urllib.parse import quote
+    if url:
+        return f"https://t.me/share/url?url={quote(url)}&text={quote(text)}"
+    return f"https://t.me/share/url?text={quote(text)}"
+
+
+def listing_link(url: str | None) -> str:
+    return url or "#"
