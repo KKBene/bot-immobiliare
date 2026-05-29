@@ -4,7 +4,11 @@ from __future__ import annotations
 
 import streamlit as st
 
-from dashboard.lib import get_listings_df, setup_page
+import sys
+from pathlib import Path
+sys.path.insert(0, str(Path(__file__).resolve().parent.parent))
+
+from lib import get_listings_df, setup_page  # noqa: E402
 
 setup_page("Listings", icon="📋")
 st.title("📋 Annunci")

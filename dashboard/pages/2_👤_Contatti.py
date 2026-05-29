@@ -7,7 +7,11 @@ from datetime import datetime, timezone
 import pandas as pd
 import streamlit as st
 
-from dashboard.lib import (
+import sys
+from pathlib import Path
+sys.path.insert(0, str(Path(__file__).resolve().parent.parent))
+
+from lib import (  # noqa: E402
     clear_caches,
     get_contacts_df,
     get_listing_contacts_df,

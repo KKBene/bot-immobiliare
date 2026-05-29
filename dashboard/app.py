@@ -10,7 +10,12 @@ import pandas as pd
 import plotly.express as px
 import streamlit as st
 
-from dashboard.lib import (
+import sys
+from pathlib import Path
+# Garantisce che `lib` sia importabile sia in locale che su Streamlit Cloud
+sys.path.insert(0, str(Path(__file__).resolve().parent))
+
+from lib import (  # noqa: E402
     get_contacts_df,
     get_listings_df,
     get_outreach_df,
