@@ -168,7 +168,9 @@ st.pydeck_chart(
         layers=[layer],
         initial_view_state=view,
         tooltip=tooltip,
-        map_style="mapbox://styles/mapbox/light-v9",
+        # Carto è gratuito e non richiede API token (Mapbox sì)
+        map_provider="carto",
+        map_style="light",
     ),
     height=620,
 )
@@ -189,7 +191,8 @@ if st.checkbox("🔥 Mostra anche heatmap concentrazione"):
         pdk.Deck(
             layers=[heat],
             initial_view_state=view,
-            map_style="mapbox://styles/mapbox/light-v9",
+            map_provider="carto",
+            map_style="light",
         ),
         height=520,
     )

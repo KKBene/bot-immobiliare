@@ -24,6 +24,7 @@ from supabase import Client
 
 from src.anti_detect import safe_sleep
 from src.db import client, sync_listing_with_contacts
+from src.geocoding import geocode_listing_inplace
 from src.notify import notify_new_private_listing
 from src.scrapers.idealista import IdealistaScraper
 from src.scrapers.immobiliare import ImmobiliareScraper
@@ -138,6 +139,12 @@ def cycle_idealista(
                 enriched = scraper.enrich_with_api(b)
                 sync_listing_with_contacts(sb, enriched)
                 stats.add(portal, "synced_new")
+                # 🌍 Geocoding inline (no-op se manca address; ~1s extra)
+                try:
+                    if geocode_listing_inplace(sb, enriched):
+                        stats.add(portal, "geocoded")
+                except Exception as ge:
+                    logger.warning(f"geocode {b.external_id}: {ge}")
                 if enriched.advertiser_type == "private":
                     stats.add(portal, "new_private")
                     # 🔔 Notifica Telegram sul nuovo privato
@@ -227,6 +234,14 @@ def cycle_immobiliare(
             try:
                 sync_listing_with_contacts(sb, l)
                 stats.add(portal, "synced_new")
+                # Immobiliare ha già lat/lng nel __NEXT_DATA__, ma se mancassero
+                # (per qualche annuncio non-standard) fallback su geocoding.
+                if not (l.latitude and l.longitude):
+                    try:
+                        if geocode_listing_inplace(sb, l):
+                            stats.add(portal, "geocoded")
+                    except Exception as ge:
+                        logger.warning(f"geocode {l.external_id}: {ge}")
                 if l.advertiser_type == "private":
                     stats.add(portal, "new_private")
                     try:

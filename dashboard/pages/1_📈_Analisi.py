@@ -322,27 +322,64 @@ st.divider()
 # ----------------------------------------------------------------------------
 
 st.subheader("📅 Riepilogo giornaliero")
+df = period.copy()
+df["day"] = df["first_seen_at"].dt.date
+df["is_priv"] = (df["advertiser_type"] == "private").astype(int)
+df["is_ide"] = (df["portal"] == "idealista").astype(int)
+df["is_imm"] = (df["portal"] == "immobiliare").astype(int)
+df["ide_priv"] = (df["is_ide"] & df["is_priv"]).astype(int)
+df["imm_priv"] = (df["is_imm"] & df["is_priv"]).astype(int)
+
 daily = (
-    period.assign(day=period["first_seen_at"].dt.date)
-    .groupby("day")
+    df.groupby("day")
     .agg(
         annunci=("id", "count"),
-        privati=("advertiser_type", lambda s: (s == "private").sum()),
-        idealista=("portal", lambda s: (s == "idealista").sum()),
-        immobiliare=("portal", lambda s: (s == "immobiliare").sum()),
+        privati=("is_priv", "sum"),
+        idealista=("is_ide", "sum"),
+        immobiliare=("is_imm", "sum"),
+        idealista_privati=("ide_priv", "sum"),
+        immobiliare_privati=("imm_priv", "sum"),
         prezzo_medio=("price_eur", "mean"),
     )
     .reset_index()
     .sort_values("day", ascending=False)
 )
+
 if not daily.empty:
     daily["prezzo_medio"] = daily["prezzo_medio"].round(0)
+    # Percentuali "privati su totale portale" per giorno
+    daily["perc_idealista_privati"] = (
+        daily["idealista_privati"] / daily["idealista"].replace(0, pd.NA) * 100
+    ).round(1)
+    daily["perc_immobiliare_privati"] = (
+        daily["immobiliare_privati"] / daily["immobiliare"].replace(0, pd.NA) * 100
+    ).round(1)
+
+    daily = daily[[
+        "day", "annunci", "privati",
+        "idealista", "idealista_privati", "perc_idealista_privati",
+        "immobiliare", "immobiliare_privati", "perc_immobiliare_privati",
+        "prezzo_medio",
+    ]]
+
     st.dataframe(
         daily, hide_index=True, use_container_width=True,
         column_config={
             "day": st.column_config.DateColumn("Giorno", format="DD/MM/YYYY"),
-            "annunci": st.column_config.NumberColumn("Annunci"),
-            "privati": st.column_config.NumberColumn("Privati", help="advertiser_type=private"),
+            "annunci": st.column_config.NumberColumn("Tot"),
+            "privati": st.column_config.NumberColumn("Privati"),
+            "idealista": st.column_config.NumberColumn("Idealista"),
+            "idealista_privati": st.column_config.NumberColumn("Ide priv."),
+            "perc_idealista_privati": st.column_config.NumberColumn(
+                "% priv Ide", format="%.1f%%",
+                help="Quota privati sul totale Idealista del giorno",
+            ),
+            "immobiliare": st.column_config.NumberColumn("Immo"),
+            "immobiliare_privati": st.column_config.NumberColumn("Immo priv."),
+            "perc_immobiliare_privati": st.column_config.NumberColumn(
+                "% priv Immo", format="%.1f%%",
+                help="Quota privati sul totale Immobiliare del giorno",
+            ),
             "prezzo_medio": st.column_config.NumberColumn("€ medio", format="€ %d"),
         },
     )
