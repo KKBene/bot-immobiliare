@@ -30,6 +30,10 @@ from src.scrapers.immobiliare import ImmobiliareScraper
 
 # Default safety caps per la paginazione dinamica
 DEFAULT_MAX_PAGES = 15
+# Numero minimo di pagine da esplorare SEMPRE (a prescindere dal backlog).
+# Garantisce copertura anche quando le prime pagine sono dominate da
+# annunci-vetrina che cambiano poco (es. Immobiliare sponsored).
+DEFAULT_MIN_PAGES = 3
 # Soglia "pagina già esplorata": se ≥ X% degli annunci della pagina sono
 # già in DB, fermiamo la paginazione (non c'è più backlog da prendere).
 STOP_WHEN_ALREADY_SEEN_PCT = 0.90
@@ -78,6 +82,7 @@ def cycle_idealista(
     sb: Client,
     *,
     max_pages: int = DEFAULT_MAX_PAGES,
+    min_pages: int = DEFAULT_MIN_PAGES,
     city: str = "milano",
     sleep_between_details: float = 1.5,
     sleep_between_pages: float = 3.0,
@@ -148,8 +153,8 @@ def cycle_idealista(
             if i < len(new_basics) - 1:
                 safe_sleep(sleep_between_details, pct=0.30)
 
-        # Stop dinamico: backlog esaurito
-        if already_pct >= stop_pct:
+        # Stop dinamico SOLO dopo aver garantito min_pages di copertura
+        if page >= min_pages and already_pct >= stop_pct:
             logger.info(
                 f"[idealista] backlog esaurito a p{page} ({already_pct:.0%} già visti), stop"
             )
@@ -175,6 +180,7 @@ def cycle_immobiliare(
     sb: Client,
     *,
     max_pages: int = DEFAULT_MAX_PAGES,
+    min_pages: int = DEFAULT_MIN_PAGES,
     city: str = "milano",
     sleep_between_pages: float = 3.0,
     stop_pct: float = STOP_WHEN_ALREADY_SEEN_PCT,
@@ -233,7 +239,7 @@ def cycle_immobiliare(
                 stats.errors.append(err)
                 stats.add(portal, "errors")
 
-        if already_pct >= stop_pct:
+        if page >= min_pages and already_pct >= stop_pct:
             logger.info(
                 f"[immobiliare] backlog esaurito a p{page} ({already_pct:.0%} già visti), stop"
             )

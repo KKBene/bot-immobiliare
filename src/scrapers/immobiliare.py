@@ -59,10 +59,19 @@ class ImmobiliareScraper:
     # ---------- fetch ----------
 
     def list_url(self, page: int = 1) -> str:
+        """URL listing ordinato per data desc (più recenti prima).
+
+        IMPORTANTE: senza `criterio=data`, la pagina 1 è la vetrina
+        sponsorizzata (sempre gli stessi 25 annunci ordinati per "rilevanza")
+        → la paginazione dinamica si fermava subito al primo passaggio del
+        bot.  Verificato 2026-06-02: tutti i nostri 336 'removed' Immobiliare
+        derivavano da questo bug.
+        """
         url = LIST_URL_TEMPLATE.format(city=self.city)
+        params = ["criterio=data", "ordine=desc"]
         if page > 1:
-            url += f"?pag={page}"
-        return url
+            params.append(f"pag={page}")
+        return url + "?" + "&".join(params)
 
     @_backoff.wrap(circuit=_cb_immobiliare)
     def fetch_list_html(self, page: int = 1, timeout: int = 25) -> str:
