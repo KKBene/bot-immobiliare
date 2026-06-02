@@ -1,5 +1,9 @@
 """Test della gate `can_outreach`: regola anti-doppio-contatto + opt-out.
 
+⚠️  DESTRUCTIVE: crea/cancella contacts e outreach_log reali. Skip di default.
+Per eseguirlo:
+    RUN_DESTRUCTIVE_TESTS=1 pytest tests/test_outreach_gate.py -m destructive
+
 Casi coperti:
   1. contatto vergine → allowed
   2. contatto con outreach SMS recente → blocked su SMS, allowed su email
@@ -18,6 +22,8 @@ from src.db import (
     log_outreach,
     mark_opted_out,
 )
+
+pytestmark = pytest.mark.destructive
 
 
 @pytest.fixture(scope="module")

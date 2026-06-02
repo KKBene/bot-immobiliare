@@ -37,12 +37,13 @@ def _make_listing(ext_id: str, kind: str = "private") -> Listing:
 
 
 def test_stops_when_page_fully_known(monkeypatch):
-    """Se la prima pagina è 100% già in DB → stop dopo 1 pagina."""
+    """Con min_pages=1 e pagina 100% nota → stop subito dopo p1."""
     sb = MagicMock()
 
     fake_basics_pages = {
         1: [_make_listing(str(i)) for i in range(1, 11)],
-        2: [_make_listing(str(i)) for i in range(11, 21)],  # non dovrebbe essere chiamata
+        2: [_make_listing(str(i)) for i in range(11, 21)],
+        3: [_make_listing(str(i)) for i in range(21, 31)],
     }
 
     def fake_fetch(self, page):
@@ -66,8 +67,30 @@ def test_stops_when_page_fully_known(monkeypatch):
                         lambda sb, l: {"listing_action": "updated", "id": 1, "contacts_linked": 0})
     monkeypatch.setattr("src.pipeline.safe_sleep", lambda *a, **kw: None)
 
-    stats = cycle_idealista(sb, max_pages=5)
+    stats = cycle_idealista(sb, max_pages=5, min_pages=1)
     assert stats.portal_counts["idealista"].get("pages_explored") == 1
+
+
+def test_min_pages_forces_coverage_even_if_first_page_fully_known(monkeypatch):
+    """Con min_pages=3 e tutte note → esplora 3 pagine prima di stoppare."""
+    sb = MagicMock()
+    pages = {p: [_make_listing(f"p{p}_{i}") for i in range(10)] for p in range(1, 6)}
+
+    monkeypatch.setattr(
+        "src.scrapers.idealista.IdealistaScraper.fetch_list_html",
+        lambda self, page: f"HTML_{page}",
+    )
+    monkeypatch.setattr(
+        "src.scrapers.idealista.IdealistaScraper.parse_list_basic",
+        staticmethod(lambda html: pages[int(html.split("_")[-1])]),
+    )
+    monkeypatch.setattr("src.pipeline.listing_already_in_db", lambda sb, p, eid: True)
+    monkeypatch.setattr("src.pipeline.sync_listing_with_contacts",
+                        lambda sb, l: {"listing_action": "updated", "id": 1, "contacts_linked": 0})
+    monkeypatch.setattr("src.pipeline.safe_sleep", lambda *a, **kw: None)
+
+    stats = cycle_idealista(sb, max_pages=5, min_pages=3)
+    assert stats.portal_counts["idealista"]["pages_explored"] == 3
 
 
 def test_paginates_to_max_when_all_new(monkeypatch):

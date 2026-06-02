@@ -1,11 +1,8 @@
 """Test E2E del flow outreach (con DB live).
 
-Scenario:
-  1. Pulisco outreach_log
-  2. prepare_batch identifica i privati contattabili (≥1 atteso)
-  3. queue_outreach scrive 'queued' nel log
-  4. Re-eseguo prepare_batch + queue_outreach → 0 nuovi (gate blocca)
-  5. Verifico nessun doppio invio
+⚠️  DESTRUCTIVE: pulisce outreach_log e modifica contacts. Skip di default.
+Per eseguirlo:
+    RUN_DESTRUCTIVE_TESTS=1 pytest tests/test_outreach_e2e.py -m destructive
 """
 
 from __future__ import annotations
@@ -14,6 +11,8 @@ import pytest
 
 from src.db import client
 from src.outreach import compose_sms, prepare_batch, queue_outreach
+
+pytestmark = pytest.mark.destructive
 
 
 @pytest.fixture(scope="module")

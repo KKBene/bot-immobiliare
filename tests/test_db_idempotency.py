@@ -1,7 +1,10 @@
 """Test integrazione: 2 run consecutivi dello stesso fixture → 0 duplicati.
 
-Richiede Supabase live (.env). Marker: integration.
-Esegue su un set di dati pulito (truncate iniziale delle tabelle).
+⚠️  DESTRUCTIVE: pulisce TUTTO il DB prima di girare. Skip di default.
+Per eseguirlo:
+    RUN_DESTRUCTIVE_TESTS=1 pytest tests/test_db_idempotency.py -m destructive
+
+Richiede Supabase live (.env).
 """
 
 from __future__ import annotations
@@ -13,14 +16,18 @@ import pytest
 from src.db import client, sync_listing_with_contacts
 from src.scrapers.immobiliare import ImmobiliareScraper
 
+pytestmark = pytest.mark.destructive
+
 FIXTURE = Path(__file__).parent / "fixtures" / "immobiliare_milano_p1.html"
 
 
 @pytest.fixture(scope="module")
 def sb_clean():
-    """Reset DB delle tabelle di lavoro prima del test."""
+    """Reset DB delle tabelle di lavoro prima del test.
+
+    ⚠️ Cancella TUTTO. Solo per ambienti dev isolati.
+    """
     sb = client()
-    # Ordine: prima i figli (FK), poi i padri
     sb.table("listing_contacts").delete().neq("listing_id", -1).execute()
     sb.table("outreach_log").delete().neq("id", -1).execute()
     sb.table("contacts").delete().neq("id", -1).execute()
