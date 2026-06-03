@@ -30,8 +30,9 @@ jobs:
       SUPABASE_ANON_KEY: ${{ secrets.SUPABASE_ANON_KEY }}
       TELEGRAM_BOT_TOKEN: ${{ secrets.TELEGRAM_BOT_TOKEN }}
       TELEGRAM_CHAT_ID: ${{ secrets.TELEGRAM_CHAT_ID }}
-      # Bright Data Web Unlocker (opzionale): se vuoti, il bot usa curl_cffi
-      # diretto. Setta i due secret per attivare il proxy DataDome-aware.
+      # Anti-bot proxy (opzionale): priorità Scrapfly → Bright Data → diretto.
+      # Basta UNO dei due. Se nessuno, fallback a curl_cffi.
+      SCRAPFLY_API_KEY: ${{ secrets.SCRAPFLY_API_KEY }}
       BRIGHTDATA_API_KEY: ${{ secrets.BRIGHTDATA_API_KEY }}
       BRIGHTDATA_ZONE: ${{ secrets.BRIGHTDATA_ZONE }}
     steps:

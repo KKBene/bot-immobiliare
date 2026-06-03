@@ -82,7 +82,62 @@ Per il nostro volume (~250MB/mese) costerebbero ~$2-4/mese, MA richiede gestione
 
 ---
 
+## 🆓 Onesta sui free tier "puri"
+
+Per il nostro volume (1000 req DataDome/mese) **nessun free tier puro basta**:
+
+| Servizio | Free credits | Req DataDome incluse | % del fabbisogno |
+|---|---|:-:|:-:|
+| Scrapfly free | 1000 cr (one-shot) | 40 | 4% |
+| ScrapingBee free | 1000 cr (one-shot) | 40 | 4% |
+| ScraperAPI free | 5000 req (7 giorni) | 250 | 25% |
+| ZenRows free | 1000 cr (mensile) | 40 | 4% |
+| **Combo di 4 in rotation** | — | ~120/mese | ~12% |
+| Apify $5 mensile | 5000 req | 0 con anti-bot (proxy datacenter blacklist) | 0% |
+| Tor / Cloudflare Workers / Oracle Cloud Free / Fly.io | illim. | 0 (IP cloud blacklist) | 0% |
+
+**Conclusione**: per coprire 1000 req/mese DataDome serve **almeno un servizio paid OR self-hosted runner** sul Mac/RPi (IP residenziale).
+
 ## 🎯 Raccomandazione
+
+### 🥇 Migliore rapporto p/q: **Scrapfly Discovery $30/mese**
+
+Motivazione del primato (verificato al 2026-06-03):
+
+| Criterio | Scrapfly | Bright Data PAYG | ScraperAPI | ScrapingBee | Apify |
+|---|:-:|:-:|:-:|:-:|:-:|
+| Costo mese reale (1000 req DataDome) | **$30** | ~$10 | $49 | $49 | $5 (ma DataDome ❌) |
+| Free credits per testare | 1000 cr (subito) | $5 (verifica) | 5k req trial 7gg | 1000 one-shot | $5 mensile |
+| Prefund richiesto? | **no** | sì ($25-50) | no | no | no |
+| Cancellabile in 1 click? | **sì** | sì | sì | sì | sì |
+| Setup (minuti) | **3** | 10 (prefund flow) | 5 | 5 | 5 |
+| Margine sul volume nostro | 8× | illim. | 10× | 4× | ❌ (DataDome) |
+| SDK Python | **eccellente** | buono | buono | discreto | buono |
+| Dashboard consumi | **chiara** | buona | discreta | discreta | ricca |
+| Probabilità bypass DataDome | >95% | >95% | >90% | >90% | <30% |
+
+**Perché vince Scrapfly sui prezzi più bassi (Bright Data)**:
+- Niente prefund: parti con $0
+- 1000 free credits = ~40 chiamate DataDome → puoi testare il flow REALE prima di pagare un centesimo
+- Costo $30 fisso prevedibile (no sorprese bolletta)
+- Pagamento mensile con carta, cancellabile
+
+**Bright Data conviene SE**:
+- Ti consolidano sopra i 3000 req/mese DataDome
+- Paghi il prefund di $25-50 una tantum
+- A regime: ~$10/mese vs $30 Scrapfly
+
+### 🏗️ Implementazione
+
+Già nel codice: [`src/proxy.py`](../src/proxy.py) supporta **entrambi** in rotation:
+1. Se `SCRAPFLY_API_KEY` settato → usa Scrapfly
+2. Altrimenti se `BRIGHTDATA_API_KEY` + `BRIGHTDATA_ZONE` → usa Bright Data
+3. Altrimenti curl_cffi diretto (free, ma 403-prone)
+
+Quindi puoi:
+- **Mese 1**: usare il free trial Scrapfly (1000 credits) + curl_cffi fallback
+- **Mese 2+**: attivare Scrapfly Discovery $30/mese
+- **Eventuale switch a Bright Data**: setti solo le env, zero cambio codice
 
 ### Strategia ibrida 3 livelli (cost-optimized)
 
@@ -128,6 +183,18 @@ Anche con tasso di conversione conservativo:
 Un cliente Paolo Vailati di gestione affitti medio-termine ha valore medio annuo significativo. **Il break-even è 1 cliente ogni 4-6 mesi** rispetto a un costo proxy di ~$15/mese × 12 = $180/anno.
 
 ---
+
+## 🔧 Setup Scrapfly (3 minuti)
+
+1. Vai su [scrapfly.io](https://scrapfly.io) → **Sign up** (con email Google o GitHub)
+2. **Account → API Key** (in alto a destra del dashboard) — copia la `scp-live-...` key
+3. Aggiungila a:
+   - **`.env` locale** → `SCRAPFLY_API_KEY=scp-live-xxxxxxxxxxxx`
+   - **GitHub Actions secrets** → [github.com/KKBene/bot-immobiliare/settings/secrets/actions](https://github.com/KKBene/bot-immobiliare/settings/secrets/actions) → nuovo secret `SCRAPFLY_API_KEY`
+4. Lancio cycle locale di test: `python scripts/run_cycle.py --max-pages 5`
+5. Sulla dashboard Scrapfly vedi i crediti consumati in tempo reale
+
+Il free tier ti dà ~40 chiamate DataDome → sufficiente per verificare che Immobiliare risponda 200 invece di 403. Se ok, upgrade a Discovery $30/mese in 1 click.
 
 ## 🔧 Setup Bright Data (5 minuti)
 
