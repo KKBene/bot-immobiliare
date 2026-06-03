@@ -74,10 +74,18 @@ class IdealistaScraper:
         self._common_headers = {"Accept-Language": "it-IT,it;q=0.9"}
 
     def _get_raw(self, url: str, headers: Optional[dict] = None, timeout: int = 20):
+        """GET via smart_get: Bright Data se configurato, altrimenti curl_cffi.
+
+        Bright Data Web Unlocker (se attivo) bypassa DataDome per Idealista,
+        difesa preventiva nel caso il loro anti-bot venga rafforzato.
+        """
+        from src.proxy import smart_get
         h = dict(self._common_headers)
         if headers:
             h.update(headers)
-        return creq.get(url, impersonate=self.impersonate, headers=h, timeout=timeout)
+        return smart_get(
+            url, impersonate=self.impersonate, headers=h, timeout=timeout
+        )
 
     @_backoff.wrap(circuit=_cb_idealista)
     def _get(self, url: str, headers: Optional[dict] = None, timeout: int = 20):

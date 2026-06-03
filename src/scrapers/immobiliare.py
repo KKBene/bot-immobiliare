@@ -79,9 +79,10 @@ class ImmobiliareScraper:
 
     @_backoff.wrap(circuit=_cb_immobiliare)
     def fetch_list_html(self, page: int = 1, timeout: int = 25) -> str:
-        """GET con retry+backoff+circuit-breaker."""
+        """GET via smart_get (Bright Data on/off) + retry+backoff+CB."""
+        from src.proxy import smart_get
         url = self.list_url(page)
-        r = creq.get(url, impersonate=self.impersonate, timeout=timeout)
+        r = smart_get(url, impersonate=self.impersonate, timeout=timeout)
         if r.status_code in (403, 429) or 500 <= r.status_code < 600:
             raise TransientError(f"status={r.status_code} for {url}")
         r.raise_for_status()
@@ -234,14 +235,15 @@ class ImmobiliareScraper:
     # Per gli altri serve browser headless (TODO Playwright).
 
     def fetch_detail_json(self, ext_id: str, timeout: int = 20) -> dict:
-        """Scarica detail page e ritorna il payload __NEXT_DATA__ parsato.
+        """Scarica detail page via smart_get (Bright Data se attivo).
 
-        Solleva ValueError se DataDome blocca o il JSON è inatteso.
+        Solleva TransientError se DataDome blocca o il JSON è inatteso.
+        Su Immobiliare la detail page è il caso più ostile: privilegia
+        Bright Data per minimizzare 403.
         """
+        from src.proxy import smart_get
         url = f"{BASE_URL}/annunci/{ext_id}/"
-        # safari17_2_ios passa più affidabilmente il DataDome di Immobiliare
-        # rispetto a "chrome" su questo endpoint specifico.
-        r = creq.get(
+        r = smart_get(
             url,
             impersonate="safari17_2_ios",
             headers={"Accept-Language": "it-IT,it;q=0.9"},

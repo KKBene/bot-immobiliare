@@ -30,6 +30,10 @@ jobs:
       SUPABASE_ANON_KEY: ${{ secrets.SUPABASE_ANON_KEY }}
       TELEGRAM_BOT_TOKEN: ${{ secrets.TELEGRAM_BOT_TOKEN }}
       TELEGRAM_CHAT_ID: ${{ secrets.TELEGRAM_CHAT_ID }}
+      # Bright Data Web Unlocker (opzionale): se vuoti, il bot usa curl_cffi
+      # diretto. Setta i due secret per attivare il proxy DataDome-aware.
+      BRIGHTDATA_API_KEY: ${{ secrets.BRIGHTDATA_API_KEY }}
+      BRIGHTDATA_ZONE: ${{ secrets.BRIGHTDATA_ZONE }}
     steps:
       - uses: actions/checkout@v4
 
