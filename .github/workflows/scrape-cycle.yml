@@ -1,9 +1,15 @@
 # GitHub Actions: scrape ogni 3 ore.
-# Setup:
-#   1) Push del repo su GitHub
-#   2) Settings → Secrets and variables → Actions:
-#      SUPABASE_URL, SUPABASE_SERVICE_KEY
-#   3) Verificare che Actions sia abilitato
+#
+# RUNNER STRATEGY:
+#   - Default: ubuntu-latest (cloud GitHub) → spesso bloccato da DataDome
+#     per Immobiliare (IP cloud blacklist).
+#   - Per uso reale: configura un self-hosted runner sul Mac (IP italiano
+#     residenziale). Vedi docs/SELF_HOSTED_RUNNER.md.
+#     Poi cambia `runs-on` a `[self-hosted, macbook]`.
+#
+# Setup secrets (Settings → Secrets and variables → Actions):
+#   SUPABASE_URL, SUPABASE_SERVICE_KEY, SUPABASE_ANON_KEY,
+#   TELEGRAM_BOT_TOKEN, TELEGRAM_CHAT_ID
 
 name: scrape-cycle
 
@@ -15,6 +21,7 @@ on:
 
 jobs:
   cycle:
+    # Cambia a `[self-hosted, macbook]` quando avrai il runner sul Mac
     runs-on: ubuntu-latest
     timeout-minutes: 30
     env:

@@ -231,8 +231,20 @@ def cycle_immobiliare(
             f"{len(new_listings)} nuovi"
         )
 
-        for l in new_listings:
+        for i, l in enumerate(new_listings):
             try:
+                # ENRICH detail per i privati senza phone (recupera ~10% extra
+                # che hanno phone esposto in advertiser.supervisor.phones)
+                if l.advertiser_type == "private" and not l.phones:
+                    try:
+                        scraper.enrich_with_detail(l)
+                        if l.phones:
+                            stats.add(portal, "enriched_phones")
+                    except Exception as ee:
+                        logger.warning(f"immobiliare enrich {l.external_id}: {ee}")
+                    # Rate-limit per le call dettaglio Immobiliare
+                    safe_sleep(2.0, pct=0.30)
+
                 sync_listing_with_contacts(sb, l)
                 stats.add(portal, "synced_new")
                 # Immobiliare ha già lat/lng nel __NEXT_DATA__, ma se mancassero

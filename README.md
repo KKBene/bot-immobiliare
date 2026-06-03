@@ -99,6 +99,8 @@ Tutto gratis — dashboard sempre online + cron auto: vedi [`docs/DEPLOY.md`](do
 
 Riepilogo: GitHub repo + Streamlit Community Cloud (dashboard) + GitHub Actions (cron 3h) + Supabase (DB).
 
+**Per scrappare Immobiliare**: setup self-hosted runner sul Mac (IP italiano vs cloud DataDome-blocked). Guida: [`docs/SELF_HOSTED_RUNNER.md`](docs/SELF_HOSTED_RUNNER.md).
+
 ## Note legali
 
 - Cold SMS commerciali a privati in Italia richiedono opt-out chiaro e base

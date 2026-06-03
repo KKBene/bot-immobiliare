@@ -13,10 +13,14 @@ import json
 import re
 from typing import Iterable, Optional
 
+import logging
+
 from curl_cffi import requests as creq
 
 from src.anti_detect import Backoff, TransientError, get_circuit_breaker
 from src.models import Listing
+
+logger = logging.getLogger("immobiliare")
 
 _cb_immobiliare = get_circuit_breaker("immobiliare", threshold=3, pause_seconds=1800)
 _backoff = Backoff(max_attempts=3, base_sleep=2.0, factor=2.0, jitter_pct=0.25)
@@ -217,6 +221,98 @@ class ImmobiliareScraper:
                 seen_e164.add(e164)
                 out.append(p)
         return out
+
+    # ========================================================================
+    # ENRICH DETAIL — recupera phone da detail page __NEXT_DATA__
+    # ========================================================================
+    #
+    # Validato empiricamente (3 giugno 2026) su 10 privati Immobiliare:
+    #   - 1/10 ha phone esposto in advertiser.supervisor.phones
+    #   - 9/10 ha phones=[] + hasCallNumbers=True (nascosto dietro click reveal)
+    #
+    # L'enrich qui implementato cattura quel 10% che ha il numero pubblicamente.
+    # Per gli altri serve browser headless (TODO Playwright).
+
+    def fetch_detail_json(self, ext_id: str, timeout: int = 20) -> dict:
+        """Scarica detail page e ritorna il payload __NEXT_DATA__ parsato.
+
+        Solleva ValueError se DataDome blocca o il JSON è inatteso.
+        """
+        url = f"{BASE_URL}/annunci/{ext_id}/"
+        # safari17_2_ios passa più affidabilmente il DataDome di Immobiliare
+        # rispetto a "chrome" su questo endpoint specifico.
+        r = creq.get(
+            url,
+            impersonate="safari17_2_ios",
+            headers={"Accept-Language": "it-IT,it;q=0.9"},
+            timeout=timeout,
+        )
+        if "captcha-delivery" in r.text or r.status_code in (403, 429):
+            raise TransientError(f"Detail {ext_id} bloccato (status {r.status_code})")
+        r.raise_for_status()
+        return self.extract_next_data(r.text)
+
+    def enrich_with_detail(self, listing: Listing) -> Listing:
+        """Arricchisce un Listing con phone presi dal detail page.
+
+        Modifica listing in-place e lo restituisce.
+        - Se `aiCallable` è True → skip (Paolo non vuole "Chiama AI")
+        - Se advertiser.supervisor/agency.phones presenti → li aggiunge
+        - Cerca anche numeri offuscati nella description COMPLETA (più lunga
+          del listing card → più chance di trovare numeri nascosti)
+
+        Non solleva su errore di rete: log warning + ritorna listing inalterato.
+        """
+        try:
+            data = self.fetch_detail_json(listing.external_id)
+        except Exception as e:
+            logger.warning(f"detail fetch failed for {listing.external_id}: {e}")
+            return listing
+
+        try:
+            re_obj = (
+                data.get("props", {}).get("pageProps", {})
+                .get("detailData", {}).get("realEstate") or {}
+            )
+        except AttributeError:
+            return listing
+
+        adv = re_obj.get("advertiser") or {}
+
+        # Skip "Chiama AI" — flag conservativo
+        if adv.get("aiCallable") is True:
+            logger.info(f"{listing.external_id}: Chiama AI → skip phone enrich")
+            return listing
+
+        # Phones da supervisor (privati) + agency (agenzie)
+        adv_phones = self._phones_from_advertiser(adv)
+
+        # Description completa dal detail page
+        props = re_obj.get("properties") or []
+        prop = props[0] if props else {}
+        full_description = prop.get("description") or ""
+
+        from src.normalize import find_phones_in_text
+        text_phones = find_phones_in_text(
+            " ".join([listing.title or "", full_description])
+        )
+
+        merged = self._merge_phones(
+            advertiser_phones=listing.phones + adv_phones,
+            text_phones=text_phones,
+        )
+        if merged != listing.phones:
+            logger.info(
+                f"{listing.external_id}: enrich → +{len(merged) - len(listing.phones)} phones"
+            )
+            listing.phones = merged
+
+        # Aggiorna anche description se più ricca
+        if full_description and (not listing.description
+                                  or len(full_description) > len(listing.description)):
+            listing.description = full_description
+
+        return listing
 
     # ---------- convenience ----------
 
