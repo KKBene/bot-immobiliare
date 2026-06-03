@@ -25,6 +25,7 @@ from supabase import Client
 from src.anti_detect import safe_sleep
 from src.db import client, sync_listing_with_contacts
 from src.geocoding import geocode_listing_inplace
+from src.health import detect_anomalies, notify_anomalies, save_cycle_run
 from src.notify import notify_new_private_listing
 from src.scrapers.idealista import IdealistaScraper
 from src.scrapers.immobiliare import ImmobiliareScraper
@@ -306,11 +307,12 @@ def run_cycle(
     city: str = "milano",
     stale_hours: int = 48,
 ) -> CycleStats:
-    """Master cycle: scrape paginato dinamico + mark stale.
+    """Master cycle: scrape paginato dinamico + mark stale + anomaly check.
 
-    `max_pages` è il safety cap su entrambi i portali. La paginazione
-    dinamica si ferma prima quando il backlog di una pagina è esaurito
-    (≥90% già in DB).
+    Alla fine del cycle:
+      - salva una riga in cycle_runs (audit)
+      - rileva anomalie (portale fermo, errori, ecc.)
+      - manda alert Telegram se anomalie presenti
     """
     sb = client()
     stats = CycleStats()
@@ -318,14 +320,37 @@ def run_cycle(
         cycle_idealista(sb, max_pages=max_pages, city=city, stats=stats)
     except Exception as e:
         stats.errors.append(f"idealista cycle aborted: {e}")
+        logger.exception("idealista cycle aborted")
     try:
         cycle_immobiliare(sb, max_pages=max_pages, city=city, stats=stats)
     except Exception as e:
         stats.errors.append(f"immobiliare cycle aborted: {e}")
+        logger.exception("immobiliare cycle aborted")
     try:
         n_removed = mark_stale_listings(sb, hours=stale_hours)
         stats.portal_counts.setdefault("_global", {})["marked_removed"] = n_removed
     except Exception as e:
         stats.errors.append(f"mark_stale: {e}")
     stats.finished_at = datetime.now(timezone.utc).isoformat()
+
+    # --- Health: salva run + rileva anomalie + notifica ---
+    try:
+        stats_dict = stats.to_dict()
+        anomalies = detect_anomalies(sb, stats_dict)
+        run_id = save_cycle_run(sb, stats_dict, anomalies)
+        if anomalies:
+            logger.warning(
+                "Anomalie rilevate (%d): %s",
+                len(anomalies), [a.code for a in anomalies],
+            )
+            notify_anomalies(anomalies, run_id=run_id)
+            # marca come notified
+            if run_id:
+                try:
+                    sb.table("cycle_runs").update({"notified": True}).eq("id", run_id).execute()
+                except Exception:
+                    pass
+    except Exception as e:
+        logger.exception(f"health check failed: {e}")
+
     return stats

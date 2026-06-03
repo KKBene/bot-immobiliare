@@ -166,6 +166,11 @@ class ImmobiliareScraper:
             raw_phones = list(set(PHONE_RE.findall(text_blob)))
             raw_emails = list(set(EMAIL_RE.findall(text_blob)))
 
+            # Fallback: cerca telefoni offuscati (3.4.2.1...) nella descrizione.
+            # Spesso i privati su Immobiliare nascondono il numero così.
+            from src.normalize import find_phones_in_text
+            phones_from_text = find_phones_in_text(text_blob)
+
             listing = Listing(
                 portal="immobiliare",
                 external_id=str(re_.get("id") or ""),
@@ -186,7 +191,12 @@ class ImmobiliareScraper:
                 longitude=location.get("longitude"),
                 advertiser_type=adv_type,
                 advertiser_name=adv_name,
-                phones=cls._phones_from_advertiser(advertiser),
+                # Phones: combiniamo quelli esposti dall'advertiser + quelli
+                # estratti dalla descrizione (offuscati). dedup E.164.
+                phones=cls._merge_phones(
+                    cls._phones_from_advertiser(advertiser),
+                    phones_from_text,
+                ),
                 raw_phones_in_text=raw_phones,
                 raw_emails_in_text=raw_emails,
                 visibility=re_.get("visibility"),
@@ -194,6 +204,19 @@ class ImmobiliareScraper:
             )
             listings.append(listing)
         return listings
+
+    @staticmethod
+    def _merge_phones(advertiser_phones: list[str], text_phones: list[str]) -> list[str]:
+        """Unisce phones advertiser + phones-da-testo, dedup su E.164."""
+        from src.normalize import normalize_phone_it
+        seen_e164: set[str] = set()
+        out: list[str] = []
+        for p in advertiser_phones + text_phones:
+            e164 = normalize_phone_it(p)
+            if e164 and e164 not in seen_e164:
+                seen_e164.add(e164)
+                out.append(p)
+        return out
 
     # ---------- convenience ----------
 

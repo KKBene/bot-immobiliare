@@ -130,6 +130,29 @@ def get_listing_contacts_df() -> pd.DataFrame:
     return pd.DataFrame(rows)
 
 
+@st.cache_data(ttl=30)
+def get_cycle_runs_df(limit: int = 100) -> pd.DataFrame:
+    """Storia degli ultimi N run del cycle (per pagina Sistema)."""
+    try:
+        rows = (
+            sb().table("cycle_runs")
+            .select("*")
+            .order("started_at", desc=True)
+            .limit(limit)
+            .execute()
+            .data
+        )
+    except Exception:
+        return pd.DataFrame()
+    df = pd.DataFrame(rows)
+    if df.empty:
+        return df
+    for col in ("started_at", "finished_at", "created_at"):
+        if col in df.columns:
+            df[col] = pd.to_datetime(df[col])
+    return df
+
+
 def clear_caches() -> None:
     """Da chiamare dopo una mutation."""
     get_listings_df.clear()

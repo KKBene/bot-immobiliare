@@ -13,6 +13,7 @@ import streamlit as st  # noqa: E402
 
 from lib import (  # noqa: E402
     get_contacts_df,
+    get_cycle_runs_df,
     get_listings_df,
     get_outreach_df,
     setup_page,
@@ -126,6 +127,76 @@ with g2:
         )
         fig.update_layout(height=300, margin=dict(t=10, l=0, r=0, b=0))
         st.plotly_chart(fig, use_container_width=True)
+
+st.divider()
+
+# ----------------------------------------------------------------------------
+# Storia cycle runs + anomalie (sorgente: tabella cycle_runs)
+# ----------------------------------------------------------------------------
+
+st.subheader("🕒 Storia cycle (ultimi 30 run)")
+runs = get_cycle_runs_df(limit=30)
+if runs.empty:
+    st.info(
+        "Nessun run registrato ancora. La tabella `cycle_runs` viene popolata "
+        "automaticamente dai prossimi cicli (locali o GitHub Actions)."
+    )
+else:
+    n_with_anom = sum(
+        1 for a in runs.get("anomalies", [])
+        if isinstance(a, list) and len(a) > 0
+    )
+    n_crit = sum(
+        1 for a in runs.get("anomalies", [])
+        if isinstance(a, list)
+        for x in a if isinstance(x, dict) and x.get("level") == "CRITICAL"
+    )
+    c1, c2, c3 = st.columns(3)
+    c1.metric("Run totali", len(runs))
+    c2.metric("Con anomalie", n_with_anom)
+    c3.metric("CRITICAL", n_crit)
+
+    def _summarize_stats(s):
+        if not isinstance(s, dict):
+            return ""
+        parts = []
+        for portal, stats in s.items():
+            if not isinstance(stats, dict) or portal.startswith("_"):
+                continue
+            new = stats.get("synced_new", 0)
+            tot = stats.get("seen", 0) or stats.get("scraped_basic", 0)
+            parts.append(f"{portal}: {new}↑/{tot}👁")
+        return " · ".join(parts)
+
+    def _summarize_anom(a):
+        if not isinstance(a, list) or not a:
+            return "—"
+        codes = [x.get("code") for x in a if isinstance(x, dict)]
+        return ", ".join(codes)
+
+    def _summarize_errors(e):
+        if not isinstance(e, list):
+            return 0
+        return len(e)
+
+    display = runs.copy()
+    display["sintesi"] = display.get("stats", []).apply(_summarize_stats)
+    display["anomalie"] = display.get("anomalies", []).apply(_summarize_anom)
+    display["n_errori"] = display.get("errors", []).apply(_summarize_errors)
+    display = display[["started_at", "duration_s", "sintesi", "n_errori", "anomalie"]]
+
+    st.dataframe(
+        display, hide_index=True, use_container_width=True, height=380,
+        column_config={
+            "started_at": st.column_config.DatetimeColumn(
+                "Quando", format="DD/MM HH:mm"
+            ),
+            "duration_s": st.column_config.NumberColumn("Durata (s)", format="%.0f"),
+            "sintesi": st.column_config.TextColumn("Sintesi", width="large"),
+            "n_errori": st.column_config.NumberColumn("Errori"),
+            "anomalie": st.column_config.TextColumn("Anomalie", width="medium"),
+        },
+    )
 
 st.divider()
 
