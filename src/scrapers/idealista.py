@@ -179,6 +179,11 @@ class IdealistaScraper:
             address, zone = cls._parse_title_zone(title)
 
             text_blob = " ".join(filter(None, [title, description]))
+            # Spese condominiali parsate dalla descrizione (Idealista non
+            # le espone come campo strutturato)
+            from src.normalize import extract_expenses_eur
+            expenses = extract_expenses_eur(description)
+            total = (price_eur or 0) + (expenses or 0) if (price_eur or expenses) else None
             out.append(Listing(
                 portal="idealista",
                 external_id=str(ext_id),
@@ -186,6 +191,8 @@ class IdealistaScraper:
                 title=title,
                 description=description,
                 price_eur=price_eur,
+                expenses_eur=expenses,
+                total_eur=total,
                 surface_m2=surface,
                 rooms=rooms,
                 floor=floor,

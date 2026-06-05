@@ -76,6 +76,59 @@ _PHONE_CANDIDATE_RE = re.compile(
 )
 
 
+# ============================================================================
+# Estrazione spese condominiali
+# ============================================================================
+#
+# Italiano vario: "spese condo", "spese condominiali", "+ Euro X spese",
+# "+50€/mese", "150€ di condo", ecc.
+# La regex cerca un numero a 2-4 cifre vicino a un token spese/condo,
+# poi normalize_expense_eur() valida il range plausibile (10-1500 €/mese).
+
+_EXPENSES_PATTERNS = [
+    # "spese condo(miniali?) X" / "spese di Y €"
+    re.compile(
+        r"spes[ae](?:\s+(?:di|per|condo[a-z]*))?\s+(?:euro\s+)?€?\s*(\d{2,4})",
+        re.IGNORECASE,
+    ),
+    # "X € spese condo(miniali?)" / "X di spese"
+    re.compile(
+        r"(?:euro\s+)?€?\s*(\d{2,4})\s*€?\s*(?:di\s+)?spes[ae]\s+(?:condo[a-z]*)?",
+        re.IGNORECASE,
+    ),
+    # "+ Euro X" / "+ X € spese"
+    re.compile(
+        r"\+\s*(?:euro\s+|€\s*)?(\d{2,4})\s*€?\s*(?:di\s+spese|spese|condo)",
+        re.IGNORECASE,
+    ),
+    # "X € di condominio" / "condo X €"
+    re.compile(
+        r"condo[a-z]*\s+(?:di\s+)?€?\s*(\d{2,4})",
+        re.IGNORECASE,
+    ),
+]
+
+
+def extract_expenses_eur(text: Optional[str]) -> Optional[int]:
+    """Cerca le spese condominiali mensili in un testo libero IT.
+
+    Restituisce int (€/mese) o None se non trova nulla di plausibile.
+    Range valido: 10-1500 €/mese (filtra anni/CAP/codici).
+    """
+    if not text:
+        return None
+    candidates: list[int] = []
+    for pat in _EXPENSES_PATTERNS:
+        for m in pat.finditer(text):
+            try:
+                v = int(m.group(1))
+                if 10 <= v <= 1500:
+                    candidates.append(v)
+            except (ValueError, IndexError):
+                continue
+    return candidates[0] if candidates else None
+
+
 def find_phones_in_text(text: Optional[str]) -> list[str]:
     """Estrae da `text` tutti i numeri italiani validi, anche quelli
     offuscati con separatori tra ogni cifra (3.3.3.1.2.3 ecc).

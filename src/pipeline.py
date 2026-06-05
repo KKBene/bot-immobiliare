@@ -29,6 +29,7 @@ from src.health import detect_anomalies, notify_anomalies, save_cycle_run
 from src.notify import notify_new_private_listing
 from src.scrapers.idealista import IdealistaScraper
 from src.scrapers.immobiliare import ImmobiliareScraper
+from src.sheets import sync_private_listings
 
 # Default safety caps per la paginazione dinamica
 DEFAULT_MAX_PAGES = 15
@@ -344,6 +345,15 @@ def run_cycle(
     except Exception as e:
         stats.errors.append(f"mark_stale: {e}")
     stats.finished_at = datetime.now(timezone.utc).isoformat()
+
+    # --- Google Sheet sync ---
+    try:
+        sheet_stats = sync_private_listings(sb)
+        if sheet_stats.get("added") or sheet_stats.get("updated"):
+            stats.portal_counts.setdefault("_global", {})["sheet"] = sheet_stats
+    except Exception as e:
+        stats.errors.append(f"sheet sync: {e}")
+        logger.warning(f"sheet sync failed: {e}")
 
     # --- Health: salva run + rileva anomalie + notifica ---
     try:

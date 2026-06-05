@@ -29,43 +29,52 @@ logger = logging.getLogger("notify")
 TELEGRAM_API = "https://api.telegram.org/bot{token}/sendMessage"
 
 
-def _telegram_config() -> Optional[tuple[str, str]]:
-    """Restituisce (token, chat_id) o None se non configurato."""
+def _telegram_config() -> Optional[tuple[str, list[str]]]:
+    """Restituisce (token, [chat_id, ...]) o None se non configurato.
+
+    Supporta TELEGRAM_CHAT_ID singolo o multipli separati da virgola.
+    """
     token = os.environ.get("TELEGRAM_BOT_TOKEN")
-    chat_id = os.environ.get("TELEGRAM_CHAT_ID")
-    if not token or not chat_id:
+    raw_ids = os.environ.get("TELEGRAM_CHAT_ID")
+    if not token or not raw_ids:
         return None
-    return (token, chat_id)
+    chat_ids = [c.strip() for c in raw_ids.split(",") if c.strip()]
+    if not chat_ids:
+        return None
+    return (token, chat_ids)
 
 
 def send_telegram(text: str, parse_mode: str = "Markdown") -> bool:
-    """Invio messaggio low-level. Restituisce True se OK, False altrimenti.
+    """Invio messaggio low-level a TUTTI i chat_id configurati.
 
+    Restituisce True se ALMENO UNO è stato inviato con successo.
     No-op (False) se Telegram non configurato — non solleva eccezioni:
     la pipeline non deve fallire perché manca la notifica.
     """
     config = _telegram_config()
     if not config:
         return False
-    token, chat_id = config
-    try:
-        r = requests.post(
-            TELEGRAM_API.format(token=token),
-            json={
-                "chat_id": chat_id,
-                "text": text,
-                "parse_mode": parse_mode,
-                "disable_web_page_preview": False,
-            },
-            timeout=10,
-        )
-        if r.status_code != 200:
-            logger.warning(f"telegram send {r.status_code}: {r.text[:200]}")
-            return False
-        return True
-    except Exception as e:
-        logger.warning(f"telegram exception: {e}")
-        return False
+    token, chat_ids = config
+    any_ok = False
+    for chat_id in chat_ids:
+        try:
+            r = requests.post(
+                TELEGRAM_API.format(token=token),
+                json={
+                    "chat_id": chat_id,
+                    "text": text,
+                    "parse_mode": parse_mode,
+                    "disable_web_page_preview": False,
+                },
+                timeout=10,
+            )
+            if r.status_code != 200:
+                logger.warning(f"telegram send to {chat_id} → {r.status_code}: {r.text[:200]}")
+                continue
+            any_ok = True
+        except Exception as e:
+            logger.warning(f"telegram exception for {chat_id}: {e}")
+    return any_ok
 
 
 def _escape_md(s: Optional[str]) -> str:

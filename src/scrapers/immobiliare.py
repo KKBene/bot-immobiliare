@@ -114,6 +114,19 @@ class ImmobiliareScraper:
         m = re.search(r"(\d+)", raw)
         return int(m.group(1)) if m else None
 
+    @staticmethod
+    def _parse_eur_amount(raw: Optional[str]) -> Optional[int]:
+        """'€ 470/mese' -> 470, '€ 1.200/mese' -> 1200, None -> None."""
+        if not raw:
+            return None
+        # Rimuovo € e /mese, parsifico (gestisce migliaia con punto IT)
+        cleaned = re.sub(r"[€/\smese]+", "", raw).replace(".", "")
+        m = re.search(r"\d+", cleaned)
+        if not m:
+            return None
+        v = int(m.group())
+        return v if 10 <= v <= 50000 else None
+
     @classmethod
     def _classify_advertiser(cls, advertiser: dict) -> tuple[str, Optional[str]]:
         """Restituisce (type, displayName).
@@ -162,6 +175,10 @@ class ImmobiliareScraper:
             adv_type, adv_name = cls._classify_advertiser(advertiser)
 
             price_obj = re_.get("price") or {}
+            costs_obj = prop.get("costs") or {}
+            expenses_eur = cls._parse_eur_amount(
+                costs_obj.get("condominiumExpenses")
+            )
             location = prop.get("location") or {}
 
             title = prop.get("caption") or seo.get("anchor")
@@ -183,6 +200,10 @@ class ImmobiliareScraper:
                 title=title,
                 description=description,
                 price_eur=price_obj.get("value"),
+                expenses_eur=expenses_eur,
+                total_eur=(
+                    (price_obj.get("value") or 0) + (expenses_eur or 0)
+                ) if (price_obj.get("value") or expenses_eur) else None,
                 surface_m2=cls._parse_surface(prop.get("surface")),
                 rooms=str(prop.get("rooms")) if prop.get("rooms") else None,
                 bathrooms=str(prop.get("bathrooms")) if prop.get("bathrooms") else None,

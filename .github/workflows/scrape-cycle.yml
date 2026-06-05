@@ -35,6 +35,10 @@ jobs:
       SCRAPFLY_API_KEY: ${{ secrets.SCRAPFLY_API_KEY }}
       BRIGHTDATA_API_KEY: ${{ secrets.BRIGHTDATA_API_KEY }}
       BRIGHTDATA_ZONE: ${{ secrets.BRIGHTDATA_ZONE }}
+      # Google Sheets sync (opzionale): webhook OR service account
+      GOOGLE_SHEET_ID: ${{ secrets.GOOGLE_SHEET_ID }}
+      GOOGLE_SHEETS_WEBHOOK_URL: ${{ secrets.GOOGLE_SHEETS_WEBHOOK_URL }}
+      GOOGLE_SHEETS_CREDENTIALS_JSON: ${{ secrets.GOOGLE_SHEETS_CREDENTIALS_JSON }}
     steps:
       - uses: actions/checkout@v4
 

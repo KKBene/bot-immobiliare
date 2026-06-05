@@ -17,12 +17,14 @@ class Listing:
     # contenuto
     title: Optional[str] = None
     description: Optional[str] = None
-    price_eur: Optional[int] = None   # canone mensile in €
+    price_eur: Optional[int] = None     # canone mensile in €
+    expenses_eur: Optional[int] = None  # spese condominiali mensili in €
+    total_eur: Optional[int] = None     # price + expenses (canone "tutto incluso")
     surface_m2: Optional[int] = None
-    rooms: Optional[str] = None       # "4" o "4+" (può essere stringa nei portali)
+    rooms: Optional[str] = None         # "4" o "4+" (può essere stringa nei portali)
     bathrooms: Optional[str] = None
     floor: Optional[str] = None
-    typology: Optional[str] = None    # "Appartamento", "Bilocale", ...
+    typology: Optional[str] = None      # "Appartamento", "Bilocale", ...
 
     # localizzazione
     address: Optional[str] = None
