@@ -178,6 +178,18 @@ class IdealistaScraper:
             description = cls._text(art.select_one(".item-description, .description"))
             address, zone = cls._parse_title_zone(title)
 
+            # Data pubblicazione: Idealista NON espone timestamp strutturato.
+            # Nel listing card c'è uno span .item-detail con valore relativo
+            # ("4 minuti", "1 giorno", "15 maggio") che convertiamo in ISO.
+            from src.normalize import parse_italian_relative_date
+            time_hint = None
+            for span in art.select(".item-detail-char .item-detail"):
+                txt = cls._text(span).lower()
+                if re.match(r"^(\d+\s*(?:minut|or[ea]|giorn|settiman|mes)|oggi|ieri|\d{1,2}\s+\w+)", txt):
+                    time_hint = txt
+                    break
+            published_at = parse_italian_relative_date(time_hint) if time_hint else None
+
             text_blob = " ".join(filter(None, [title, description]))
             # Spese condominiali parsate dalla descrizione (Idealista non
             # le espone come campo strutturato)
@@ -200,6 +212,7 @@ class IdealistaScraper:
                 city="Milano",
                 microzone=zone,
                 contract="rent",
+                published_at=published_at,
                 raw_phones_in_text=list(set(PHONE_RE.findall(text_blob))),
                 raw_emails_in_text=list(set(EMAIL_RE.findall(text_blob))),
             ))

@@ -127,6 +127,21 @@ class ImmobiliareScraper:
         v = int(m.group())
         return v if 10 <= v <= 50000 else None
 
+    @staticmethod
+    def _unix_to_iso(ts) -> Optional[str]:
+        """Converte timestamp UNIX (secondi) in ISO 8601 UTC. None se invalido."""
+        if not ts:
+            return None
+        try:
+            ts_int = int(ts)
+        except (ValueError, TypeError):
+            return None
+        # Sanity check: timestamp plausibile (anni 2010-2030)
+        if not (1262304000 <= ts_int <= 1893456000):
+            return None
+        from datetime import datetime, timezone
+        return datetime.fromtimestamp(ts_int, tz=timezone.utc).isoformat()
+
     @classmethod
     def _classify_advertiser(cls, advertiser: dict) -> tuple[str, Optional[str]]:
         """Restituisce (type, displayName).
@@ -179,6 +194,11 @@ class ImmobiliareScraper:
             expenses_eur = cls._parse_eur_amount(
                 costs_obj.get("condominiumExpenses")
             )
+            # Data di pubblicazione: in Immobiliare `realEstate.createdAt` è
+            # un timestamp UNIX in secondi. Spesso presente solo nel detail
+            # page (nel listing card è null), in tal caso resta None e
+            # verrà popolato da enrich_with_detail.
+            published_at = cls._unix_to_iso(re_.get("createdAt"))
             location = prop.get("location") or {}
 
             title = prop.get("caption") or seo.get("anchor")
@@ -227,6 +247,7 @@ class ImmobiliareScraper:
                 raw_emails_in_text=raw_emails,
                 visibility=re_.get("visibility"),
                 contract=re_.get("contract"),
+                published_at=published_at,
             )
             listings.append(listing)
         return listings
@@ -301,6 +322,12 @@ class ImmobiliareScraper:
             return listing
 
         adv = re_obj.get("advertiser") or {}
+
+        # Data di pubblicazione: createdAt è timestamp UNIX in secondi
+        if not listing.published_at:
+            pub = self._unix_to_iso(re_obj.get("createdAt"))
+            if pub:
+                listing.published_at = pub
 
         # Skip "Chiama AI" — flag conservativo
         if adv.get("aiCallable") is True:

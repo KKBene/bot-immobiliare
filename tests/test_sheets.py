@@ -27,6 +27,7 @@ def test_disabled_without_env(monkeypatch):
     monkeypatch.delenv("GOOGLE_SHEET_ID", raising=False)
     monkeypatch.delenv("GOOGLE_SHEETS_CREDENTIALS_JSON", raising=False)
     monkeypatch.delenv("GOOGLE_SHEETS_CREDENTIALS_FILE", raising=False)
+    monkeypatch.delenv("GOOGLE_SHEETS_WEBHOOK_URL", raising=False)
     assert is_enabled() is False
 
 
@@ -34,6 +35,7 @@ def test_disabled_without_creds(monkeypatch):
     monkeypatch.setenv("GOOGLE_SHEET_ID", "x")
     monkeypatch.delenv("GOOGLE_SHEETS_CREDENTIALS_JSON", raising=False)
     monkeypatch.delenv("GOOGLE_SHEETS_CREDENTIALS_FILE", raising=False)
+    monkeypatch.delenv("GOOGLE_SHEETS_WEBHOOK_URL", raising=False)
     assert is_enabled() is False
 
 
@@ -72,6 +74,9 @@ def test_listing_row_uses_correct_order():
 
 def test_sync_noop_when_not_configured(monkeypatch):
     monkeypatch.delenv("GOOGLE_SHEET_ID", raising=False)
+    monkeypatch.delenv("GOOGLE_SHEETS_WEBHOOK_URL", raising=False)
+    monkeypatch.delenv("GOOGLE_SHEETS_CREDENTIALS_JSON", raising=False)
+    monkeypatch.delenv("GOOGLE_SHEETS_CREDENTIALS_FILE", raising=False)
     sb = MagicMock()
     result = sync_private_listings(sb)
     assert result["added"] == 0
@@ -80,6 +85,7 @@ def test_sync_noop_when_not_configured(monkeypatch):
 
 
 def test_sync_appends_new_and_updates_existing(monkeypatch):
+    monkeypatch.delenv("GOOGLE_SHEETS_WEBHOOK_URL", raising=False)
     monkeypatch.setenv("GOOGLE_SHEET_ID", "ID")
     monkeypatch.setenv("GOOGLE_SHEETS_CREDENTIALS_JSON",
                       '{"type":"service_account","client_email":"x"}')

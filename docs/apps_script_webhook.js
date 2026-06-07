@@ -65,15 +65,70 @@ function getOrCreateSheet(columns) {
     const headerRange = sheet.getRange(1, 1, 1, columns.length);
     headerRange.setFontWeight('bold').setBackground('#E8F5E9');
     sheet.setFrozenRows(1);
-  } else {
-    // Verifica header (case-insensitive)
-    const firstRow = sheet.getRange(1, 1, 1, columns.length).getValues()[0];
-    const headerMissing = firstRow.every(c => !c);
-    if (headerMissing) {
-      sheet.getRange(1, 1, 1, columns.length).setValues([columns]);
-    }
+    return sheet;
+  }
+  // Esiste già: verifico se l'header corrisponde a `columns`.
+  const lastCol = sheet.getLastColumn();
+  const currentHeader = lastCol > 0
+    ? sheet.getRange(1, 1, 1, lastCol).getValues()[0]
+    : [];
+
+  if (currentHeader.length === 0 || currentHeader.every(c => !c)) {
+    // Header vuoto → riempi
+    sheet.getRange(1, 1, 1, columns.length).setValues([columns]);
+    sheet.getRange(1, 1, 1, columns.length)
+         .setFontWeight('bold').setBackground('#E8F5E9');
+    sheet.setFrozenRows(1);
+    return sheet;
+  }
+
+  // Se l'header esistente ha MENO colonne del nuovo → schema migration:
+  // - sposta a destra eventuali colonne disallineate
+  // - aggiunge le colonne mancanti
+  // - PRESERVA i dati esistenti
+  if (currentHeader.length < columns.length) {
+    migrateHeader(sheet, currentHeader, columns);
   }
   return sheet;
+}
+
+/**
+ * Inserisce nuove colonne in posizioni corrispondenti al nuovo schema
+ * preservando i dati delle vecchie colonne (match by name, case-insensitive).
+ */
+function migrateHeader(sheet, currentHeader, newColumns) {
+  const lastRow = sheet.getLastRow();
+  const numDataRows = Math.max(0, lastRow - 1);
+
+  // mapping vecchio → posizione nel nuovo
+  const oldIdxToNewIdx = {};
+  currentHeader.forEach((h, oldIdx) => {
+    const matchIdx = newColumns.findIndex(
+      c => String(c).toLowerCase().trim() === String(h).toLowerCase().trim()
+    );
+    if (matchIdx >= 0) oldIdxToNewIdx[oldIdx] = matchIdx;
+  });
+
+  // Costruisco i nuovi dati di tutta la matrice (header + dati)
+  const oldData = numDataRows > 0
+    ? sheet.getRange(2, 1, numDataRows, currentHeader.length).getValues()
+    : [];
+  const newData = oldData.map(oldRow => {
+    const newRow = new Array(newColumns.length).fill('');
+    Object.keys(oldIdxToNewIdx).forEach(oldIdx => {
+      newRow[oldIdxToNewIdx[oldIdx]] = oldRow[oldIdx];
+    });
+    return newRow;
+  });
+
+  // Pulisco tutto il foglio e riscrivo (header + dati)
+  sheet.clear();
+  sheet.getRange(1, 1, 1, newColumns.length).setValues([newColumns])
+       .setFontWeight('bold').setBackground('#E8F5E9');
+  sheet.setFrozenRows(1);
+  if (newData.length > 0) {
+    sheet.getRange(2, 1, newData.length, newColumns.length).setValues(newData);
+  }
 }
 
 function upsertRows(sheet, columns, rows) {

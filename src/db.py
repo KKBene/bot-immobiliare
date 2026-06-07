@@ -53,6 +53,8 @@ def upsert_listing(sb: Client, listing: Listing) -> dict:
         "title": listing.title,
         "description": listing.description,
         "price_eur": listing.price_eur,
+        "expenses_eur": listing.expenses_eur,
+        "total_eur": listing.total_eur,
         "surface_m2": listing.surface_m2,
         "rooms": listing.rooms,
         "bathrooms": listing.bathrooms,
@@ -68,6 +70,7 @@ def upsert_listing(sb: Client, listing: Listing) -> dict:
         "advertiser_name": listing.advertiser_name,
         "visibility": listing.visibility,
         "contract": listing.contract,
+        "published_at": listing.published_at,
         "last_seen_at": datetime.now(timezone.utc).isoformat(),
     }
     # Cerca esistente per decidere INSERT vs UPDATE con count

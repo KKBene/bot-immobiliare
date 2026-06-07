@@ -129,6 +129,96 @@ def extract_expenses_eur(text: Optional[str]) -> Optional[int]:
     return candidates[0] if candidates else None
 
 
+# ============================================================================
+# Parsing data di pubblicazione (Idealista pattern relativo/assoluto)
+# ============================================================================
+
+_MONTH_IT = {
+    "gennaio": 1, "gen": 1,
+    "febbraio": 2, "feb": 2,
+    "marzo": 3, "mar": 3,
+    "aprile": 4, "apr": 4,
+    "maggio": 5, "mag": 5,
+    "giugno": 6, "giu": 6,
+    "luglio": 7, "lug": 7,
+    "agosto": 8, "ago": 8,
+    "settembre": 9, "set": 9, "sett": 9,
+    "ottobre": 10, "ott": 10,
+    "novembre": 11, "nov": 11,
+    "dicembre": 12, "dic": 12,
+}
+
+
+def parse_italian_relative_date(text: Optional[str]) -> Optional[str]:
+    """Parsifica espressioni di data IT (Idealista listing card) in ISO UTC.
+
+    Formati supportati:
+      "1 minuto" / "5 minuti"          → now() - X minuti
+      "1 ora" / "3 ore"                → now() - X ore
+      "1 giorno" / "2 giorni"          → now() - X giorni
+      "1 settimana" / "2 settimane"    → now() - 7×N giorni
+      "1 mese" / "2 mesi"              → now() - 30×N giorni
+      "15 maggio"                      → 15/05/anno-corrente
+      "1 giugno 2025"                  → 1/06/2025
+      "1 minuto" / "ieri" / "oggi"     → casi speciali
+
+    Restituisce stringa ISO 8601 UTC o None.
+    """
+    if not text:
+        return None
+    from datetime import datetime, timedelta, timezone
+
+    t = text.strip().lower()
+    now = datetime.now(timezone.utc)
+
+    # casi speciali
+    if t in ("oggi", "appena pubblicato"):
+        return now.isoformat()
+    if t == "ieri":
+        return (now - timedelta(days=1)).isoformat()
+
+    # 5 minuti / 1 minuto
+    m = re.match(r"(\d+)\s*minut[oi]", t)
+    if m:
+        return (now - timedelta(minutes=int(m.group(1)))).isoformat()
+    # 5 ore / 1 ora
+    m = re.match(r"(\d+)\s*or[ea]", t)
+    if m:
+        return (now - timedelta(hours=int(m.group(1)))).isoformat()
+    # 5 giorni / 1 giorno
+    m = re.match(r"(\d+)\s*giorn[oi]", t)
+    if m:
+        return (now - timedelta(days=int(m.group(1)))).isoformat()
+    # 1 settimana / 2 settimane
+    m = re.match(r"(\d+)\s*settiman[ae]", t)
+    if m:
+        return (now - timedelta(days=7 * int(m.group(1)))).isoformat()
+    # 1 mese / 2 mesi
+    m = re.match(r"(\d+)\s*mes[ei]", t)
+    if m:
+        return (now - timedelta(days=30 * int(m.group(1)))).isoformat()
+
+    # "15 maggio [2025]"
+    m = re.match(r"(\d{1,2})\s+([a-z]+)(?:\s+(\d{4}))?", t)
+    if m:
+        day = int(m.group(1))
+        month_name = m.group(2)
+        year = int(m.group(3)) if m.group(3) else now.year
+        month = _MONTH_IT.get(month_name) or _MONTH_IT.get(month_name[:3])
+        if month and 1 <= day <= 31:
+            try:
+                dt = datetime(year, month, day, tzinfo=timezone.utc)
+                # Se la data sembra "futura" (es. settembre 2026 quando siamo a
+                # giugno 2026), probabilmente è dell'anno prima.
+                if dt > now + timedelta(days=30):
+                    dt = datetime(year - 1, month, day, tzinfo=timezone.utc)
+                return dt.isoformat()
+            except ValueError:
+                pass
+
+    return None
+
+
 def find_phones_in_text(text: Optional[str]) -> list[str]:
     """Estrae da `text` tutti i numeri italiani validi, anche quelli
     offuscati con separatori tra ogni cifra (3.3.3.1.2.3 ecc).

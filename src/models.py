@@ -46,6 +46,8 @@ class Listing:
     # meta
     visibility: Optional[str] = None         # "supervetrina" | "standard" | ...
     contract: Optional[str] = None           # "rent" | "sale"
+    # Data di pubblicazione dell'annuncio sul portale (NOT first_seen by bot)
+    published_at: Optional[str] = None       # ISO 8601 UTC
     scraped_at: str = field(default_factory=lambda: datetime.now(timezone.utc).isoformat())
 
     def to_dict(self) -> dict:

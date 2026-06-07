@@ -43,8 +43,9 @@ COLUMNS = [
     "Mq",
     "Locali",
     "Indirizzo",
-    "Visto il",
-    "Contattato",   # Sì/No, modificata MANUALMENTE da Paolo
+    "Pubblicato il",   # data pubblicazione sul portale (≠ Visto il)
+    "Visto il",        # quando il bot l'ha intercettato la prima volta
+    "Contattato",      # Sì/No, modificata MANUALMENTE da Paolo
 ]
 URL_COL_IDX = 0       # url è la chiave di dedup
 CONTACTED_COL_IDX = COLUMNS.index("Contattato")
@@ -122,6 +123,7 @@ def _listing_row(listing: dict, contact_phone: Optional[str] = None,
                  contacted: str = "") -> list:
     """Costruisce la riga ordinata secondo COLUMNS."""
     seen = (listing.get("first_seen_at") or "")[:16].replace("T", " ")
+    pub = (listing.get("published_at") or "")[:16].replace("T", " ")
     return [
         listing.get("url") or "",
         listing.get("portal") or "",
@@ -134,6 +136,7 @@ def _listing_row(listing: dict, contact_phone: Optional[str] = None,
         listing.get("surface_m2") or "",
         listing.get("rooms") or "",
         listing.get("address") or "",
+        pub,
         seen,
         contacted,
     ]
@@ -144,12 +147,15 @@ def _load_private_listings(sb, limit: int) -> tuple[list[dict], dict]:
 
     Ritorna (listings_list, listing_id_to_phone).
     NB: include anche privati SENZA phone (la colonna Telefono sarà vuota).
+
+    IMPORTANTE: Supabase REST default ritorna max 1000 righe per query.
+    Pre-filtriamo listing_contacts solo per gli ID privati, in chunk da 100.
     """
     listings_rows = (
         sb.table("listings")
         .select("id, url, portal, advertiser_name, microzone, address, "
                 "price_eur, expenses_eur, total_eur, surface_m2, rooms, "
-                "first_seen_at, status")
+                "first_seen_at, published_at, status")
         .eq("advertiser_type", "private")
         .eq("status", "active")
         .order("first_seen_at", desc=True)
@@ -157,17 +163,37 @@ def _load_private_listings(sb, limit: int) -> tuple[list[dict], dict]:
         .execute()
         .data
     )
+    if not listings_rows:
+        return [], {}
 
-    lc_rows = sb.table("listing_contacts").select("listing_id, contact_id").execute().data
+    # Carica listing_contacts SOLO per i listing privati (chunk per evitare
+    # URL troppo lunghi se ci sono moltissimi privati)
+    listing_ids = [l["id"] for l in listings_rows]
+    lc_rows: list = []
+    for chunk_start in range(0, len(listing_ids), 100):
+        chunk = listing_ids[chunk_start:chunk_start + 100]
+        rs = (
+            sb.table("listing_contacts")
+            .select("listing_id, contact_id")
+            .in_("listing_id", chunk)
+            .execute()
+            .data
+        )
+        lc_rows.extend(rs)
+
     contact_ids = list({r["contact_id"] for r in lc_rows})
     contacts_by_id: dict = {}
-    if contact_ids:
-        for chunk_start in range(0, len(contact_ids), 100):
-            chunk = contact_ids[chunk_start:chunk_start + 100]
-            cs = sb.table("contacts").select("id, phone_e164, kind") \
-                .in_("id", chunk).execute().data
-            for c in cs:
-                contacts_by_id[c["id"]] = c
+    for chunk_start in range(0, len(contact_ids), 100):
+        chunk = contact_ids[chunk_start:chunk_start + 100]
+        cs = (
+            sb.table("contacts")
+            .select("id, phone_e164, kind")
+            .in_("id", chunk)
+            .execute()
+            .data
+        )
+        for c in cs:
+            contacts_by_id[c["id"]] = c
 
     listing_to_phone: dict = {}
     for lc in lc_rows:
