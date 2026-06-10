@@ -1,0 +1,33 @@
+# Workflow di test del routing Telegram: si triggera manualmente.
+#
+# Uso:
+#   GitHub → Actions → "test-notify" → Run workflow
+#
+# Risultato atteso:
+#   - Paolo (chat 5434276318): riceve SOLO il listing fittizio
+#   - cislyfree (chat 1243074559): riceve listing + anomaly
+
+name: test-notify
+
+on:
+  workflow_dispatch:
+
+jobs:
+  test-routing:
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    env:
+      TELEGRAM_BOT_TOKEN: ${{ secrets.TELEGRAM_BOT_TOKEN }}
+      TELEGRAM_CHAT_ID: ${{ secrets.TELEGRAM_CHAT_ID }}
+      TELEGRAM_CHAT_ID_LISTINGS: ${{ secrets.TELEGRAM_CHAT_ID_LISTINGS }}
+      TELEGRAM_CHAT_ID_ANOMALIES: ${{ secrets.TELEGRAM_CHAT_ID_ANOMALIES }}
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+          cache: pip
+      - name: Install minimal deps
+        run: pip install requests python-dotenv
+      - name: Run routing test
+        run: python scripts/test_notify_routing.py
