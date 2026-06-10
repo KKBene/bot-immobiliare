@@ -29,32 +29,70 @@ logger = logging.getLogger("notify")
 TELEGRAM_API = "https://api.telegram.org/bot{token}/sendMessage"
 
 
-def _telegram_config() -> Optional[tuple[str, list[str]]]:
-    """Restituisce (token, [chat_id, ...]) o None se non configurato.
+def _parse_ids(raw: Optional[str]) -> list[str]:
+    if not raw:
+        return []
+    return [c.strip() for c in raw.split(",") if c.strip()]
 
-    Supporta TELEGRAM_CHAT_ID singolo o multipli separati da virgola.
+
+def _chat_ids_for(kind: str) -> list[str]:
+    """Restituisce la lista di chat_id che devono ricevere notifiche `kind`.
+
+    `kind` ∈ {"listing", "anomaly"}.
+
+    Routing (in ordine di priorità):
+      1. env specifica per kind: `TELEGRAM_CHAT_ID_LISTINGS` / `_ANOMALIES`
+      2. fallback alla lista generale `TELEGRAM_CHAT_ID`
+      3. lista vuota → no-op
+    """
+    env_name = {
+        "listing": "TELEGRAM_CHAT_ID_LISTINGS",
+        "anomaly": "TELEGRAM_CHAT_ID_ANOMALIES",
+    }.get(kind)
+    if env_name:
+        specific = _parse_ids(os.environ.get(env_name))
+        if specific:
+            return specific
+    return _parse_ids(os.environ.get("TELEGRAM_CHAT_ID"))
+
+
+def _telegram_config() -> Optional[tuple[str, list[str]]]:
+    """Backward-compat: ritorna (token, chat_ids generali) o None.
+
+    Usato dai chiamanti che non specificano kind.
     """
     token = os.environ.get("TELEGRAM_BOT_TOKEN")
-    raw_ids = os.environ.get("TELEGRAM_CHAT_ID")
-    if not token or not raw_ids:
+    if not token:
         return None
-    chat_ids = [c.strip() for c in raw_ids.split(",") if c.strip()]
+    chat_ids = _parse_ids(os.environ.get("TELEGRAM_CHAT_ID"))
     if not chat_ids:
         return None
     return (token, chat_ids)
 
 
-def send_telegram(text: str, parse_mode: str = "Markdown") -> bool:
-    """Invio messaggio low-level a TUTTI i chat_id configurati.
+def send_telegram(
+    text: str,
+    parse_mode: str = "Markdown",
+    *,
+    kind: str = "listing",
+) -> bool:
+    """Invio messaggio Telegram con routing per `kind`.
+
+    `kind`:
+      - "listing" → chat_id presenti in TELEGRAM_CHAT_ID_LISTINGS
+                    (fallback TELEGRAM_CHAT_ID)
+      - "anomaly" → chat_id presenti in TELEGRAM_CHAT_ID_ANOMALIES
+                    (fallback TELEGRAM_CHAT_ID)
 
     Restituisce True se ALMENO UNO è stato inviato con successo.
-    No-op (False) se Telegram non configurato — non solleva eccezioni:
-    la pipeline non deve fallire perché manca la notifica.
+    No-op (False) se non configurato. Non solleva eccezioni.
     """
-    config = _telegram_config()
-    if not config:
+    token = os.environ.get("TELEGRAM_BOT_TOKEN")
+    if not token:
         return False
-    token, chat_ids = config
+    chat_ids = _chat_ids_for(kind)
+    if not chat_ids:
+        return False
     any_ok = False
     for chat_id in chat_ids:
         try:
@@ -125,7 +163,7 @@ def notify_new_private_listing(listing: Listing) -> bool:
     if spec_line:
         text += f"💰 {spec_line}\n"
     text += f"🔗 [Apri annuncio]({listing.url})"
-    return send_telegram(text)
+    return send_telegram(text, kind="listing")
 
 
 def test_telegram() -> None:

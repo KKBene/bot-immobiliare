@@ -290,11 +290,20 @@ def cycle_immobiliare(
 # ============================================================================
 
 def mark_stale_listings(sb: Client, hours: int = 48) -> int:
-    """Marca status='removed' per annunci non più visti da >hours ore.
+    """Marca status='removed' per annunci AGENZIA non più visti da >hours ore.
 
-    Idempotente. Conviene chiamarla una volta per ciclo di scrape: chi è
-    sparito dal portale (locato/ritirato) viene segnato 'removed' e non
-    appare più nella dashboard dei lead attivi.
+    ⚠️ DECISIONE 2026-06-07: NON marcare mai 'removed' i PRIVATI.
+    Motivo: il `not seen in N hours` può essere falso positivo (es. il bot
+    è bloccato da DataDome → tutti i privati vengono marcati removed
+    indebitamente, mentre sono ancora pubblicati sul portale).
+    Per i privati la sorgente di verità è l'utente nel foglio (colonna Status).
+
+    Le agenzie restano gestite dal mark_stale perché:
+    - sono numerose (centinaia)
+    - non sono lead da contattare per Paolo
+    - serve "pulizia" del DB per non confondere le metriche
+
+    Idempotente.
     """
     cutoff = (datetime.now(timezone.utc) - timedelta(hours=hours)).isoformat()
     res = (
@@ -302,11 +311,12 @@ def mark_stale_listings(sb: Client, hours: int = 48) -> int:
         .update({"status": "removed"})
         .lt("last_seen_at", cutoff)
         .neq("status", "removed")
+        .eq("advertiser_type", "agency")  # ← solo agenzie
         .execute()
     )
     n = len(res.data) if res.data else 0
     if n:
-        logger.info(f"[mark_stale] marcati 'removed' {n} annunci (>{hours}h senza re-scrape)")
+        logger.info(f"[mark_stale] marcati 'removed' {n} agenzie (>{hours}h senza re-scrape)")
     return n
 
 

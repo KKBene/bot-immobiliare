@@ -29,7 +29,9 @@
  */
 
 const TAB_NAME = 'Privati';
-const CONTATTATO_COL_NAME = 'Contattato';
+// Colonne MODIFICATE A MANO da Paolo: non sovrascriverle mai in update.
+// Il bot le scrive solo per le righe NUOVE (primo append).
+const USER_EDITED_COLS = ['Contattato', 'Status'];
 const URL_COL_NAME = 'URL';
 
 function doPost(e) {
@@ -133,10 +135,13 @@ function migrateHeader(sheet, currentHeader, newColumns) {
 
 function upsertRows(sheet, columns, rows) {
   const urlColIdx = columns.indexOf(URL_COL_NAME);
-  const contattatoColIdx = columns.indexOf(CONTATTATO_COL_NAME);
-  if (urlColIdx < 0 || contattatoColIdx < 0) {
-    return { error: 'Missing URL or Contattato column' };
+  if (urlColIdx < 0) {
+    return { error: 'Missing URL column' };
   }
+  // Indici delle colonne che NON vanno sovrascritte in update
+  const protectedIdx = USER_EDITED_COLS
+    .map(name => columns.indexOf(name))
+    .filter(i => i >= 0);
 
   const lastRow = sheet.getLastRow();
   let existing = [];
@@ -151,6 +156,8 @@ function upsertRows(sheet, columns, rows) {
 
   let added = 0, updated = 0, skipped = 0;
   const newRows = [];
+  const contattatoIdx = columns.indexOf('Contattato');
+  const statusIdx = columns.indexOf('Status');
 
   rows.forEach(row => {
     const url = row[urlColIdx];
@@ -158,16 +165,18 @@ function upsertRows(sheet, columns, rows) {
 
     const existingRowNum = urlToRow.get(String(url));
     if (existingRowNum) {
-      // UPDATE: tutte le colonne TRANNE Contattato
+      // UPDATE: preserva i valori esistenti delle colonne user-edited
       const updateRow = row.slice();
       const existingRow = existing[existingRowNum - 2];
-      updateRow[contattatoColIdx] = existingRow[contattatoColIdx]; // preserve
+      protectedIdx.forEach(i => {
+        updateRow[i] = existingRow[i]; // preserva quello che l'utente ha scritto
+      });
       sheet.getRange(existingRowNum, 1, 1, columns.length).setValues([updateRow]);
       updated++;
     } else {
-      // APPEND: Contattato default "No"
+      // APPEND: default "No" per Contattato; lascia Status dal payload
       const newRow = row.slice();
-      if (!newRow[contattatoColIdx]) newRow[contattatoColIdx] = 'No';
+      if (contattatoIdx >= 0 && !newRow[contattatoIdx]) newRow[contattatoIdx] = 'No';
       newRows.push(newRow);
       added++;
     }

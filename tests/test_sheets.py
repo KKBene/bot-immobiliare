@@ -50,6 +50,7 @@ def test_listing_row_uses_correct_order():
     listing = {
         "url": "https://www.idealista.it/immobile/1/",
         "portal": "idealista",
+        "status": "active",
         "advertiser_name": "Marino",
         "microzone": "Sempione",
         "address": "Via X",
@@ -61,15 +62,19 @@ def test_listing_row_uses_correct_order():
         "first_seen_at": "2026-06-03T20:30:00",
     }
     row = _listing_row(listing, contact_phone="+393357420063", contacted="No")
-    # ordine deterministico
-    assert row[0] == listing["url"]
-    assert row[1] == "idealista"
-    assert row[2] == "Marino"
-    assert row[3] == "+393357420063"
-    assert row[5] == 950   # prezzo
-    assert row[6] == 150   # spese
-    assert row[7] == 1100  # totale
-    assert row[CONTACTED_COL_IDX] == "No"
+    # Riga deterministica: name della colonna è chiave per non rompere quando
+    # si aggiungono altre colonne in mezzo.
+    from src.sheets import COLUMNS
+    by_col = dict(zip(COLUMNS, row))
+    assert by_col["URL"] == listing["url"]
+    assert by_col["Portale"] == "idealista"
+    assert by_col["Status"] == "active"
+    assert by_col["Inserzionista"] == "Marino"
+    assert by_col["Telefono"] == "+393357420063"
+    assert by_col["Prezzo €/mese"] == 950
+    assert by_col["Spese €/mese"] == 150
+    assert by_col["Totale €/mese"] == 1100
+    assert by_col["Contattato"] == "No"
 
 
 def test_sync_noop_when_not_configured(monkeypatch):
@@ -94,10 +99,10 @@ def test_sync_appends_new_and_updates_existing(monkeypatch):
     # listings query
     listings_resp = MagicMock()
     listings_resp.data = [
-        {"id": 1, "url": "https://x.it/1", "portal": "idealista",
+        {"id": 1, "url": "https://x.it/1", "portal": "idealista", "status": "active",
          "advertiser_name": "A", "microzone": "Z", "price_eur": 100,
          "first_seen_at": "2026-06-03T00:00:00"},
-        {"id": 2, "url": "https://x.it/2", "portal": "idealista",
+        {"id": 2, "url": "https://x.it/2", "portal": "idealista", "status": "active",
          "advertiser_name": "B", "microzone": "Z", "price_eur": 200,
          "first_seen_at": "2026-06-03T00:00:00"},
     ]
@@ -114,13 +119,16 @@ def test_sync_appends_new_and_updates_existing(monkeypatch):
         {"id": 20, "phone_e164": "+393222222222", "kind": "private"},
     ]
 
-    # Configura chain mocks
+    # Configura chain mocks (signature dinamica: la chain di select.eq...order
+    # può variare a seconda dei filtri)
     def fake_table(name):
         t = MagicMock()
         if name == "listings":
-            t.select.return_value.eq.return_value.eq.return_value.order.return_value.limit.return_value.execute.return_value = listings_resp
+            # Dopo `.eq("advertiser_type","private").order(...).limit(...).execute()`
+            t.select.return_value.eq.return_value.order.return_value.limit.return_value.execute.return_value = listings_resp
         elif name == "listing_contacts":
-            t.select.return_value.execute.return_value = lc_resp
+            # Chunked: select.in_("listing_id", chunk).execute
+            t.select.return_value.in_.return_value.execute.return_value = lc_resp
         elif name == "contacts":
             t.select.return_value.in_.return_value.execute.return_value = contacts_resp
         return t

@@ -191,4 +191,4 @@ def notify_anomalies(anomalies: list[Anomaly], run_id: int | None = None) -> boo
         lines.append(f"_Run id: {run_id}_")
 
     text = "\n".join(lines)
-    return send_telegram(text)
+    return send_telegram(text, kind="anomaly")

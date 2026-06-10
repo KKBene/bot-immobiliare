@@ -34,6 +34,7 @@ logger = logging.getLogger("sheets")
 COLUMNS = [
     "URL",
     "Portale",
+    "Status",          # active = ancora sul portale  |  removed = sparito da >48h
     "Inserzionista",
     "Telefono",
     "Zona",
@@ -49,6 +50,11 @@ COLUMNS = [
 ]
 URL_COL_IDX = 0       # url è la chiave di dedup
 CONTACTED_COL_IDX = COLUMNS.index("Contattato")
+# Colonne user-edited: il bot NON le sovrascrive mai in update
+# (Apps Script Webhook gestisce questa logica server-side; per il fallback
+# Service Account, ci pensa _sync_via_service_account a saltarle).
+USER_EDITED_COLS = ("Contattato", "Status")
+USER_EDITED_IDX = tuple(COLUMNS.index(c) for c in USER_EDITED_COLS)
 
 SHEET_TAB_NAME = "Privati"
 
@@ -127,6 +133,7 @@ def _listing_row(listing: dict, contact_phone: Optional[str] = None,
     return [
         listing.get("url") or "",
         listing.get("portal") or "",
+        listing.get("status") or "",
         listing.get("advertiser_name") or "",
         contact_phone or "",
         listing.get("microzone") or "",
@@ -151,13 +158,16 @@ def _load_private_listings(sb, limit: int) -> tuple[list[dict], dict]:
     IMPORTANTE: Supabase REST default ritorna max 1000 righe per query.
     Pre-filtriamo listing_contacts solo per gli ID privati, in chunk da 100.
     """
+    # NB: includiamo ANCHE i listings con status='removed' — sono lead che
+    # potrebbero ancora essere validi (proprietario contattabile anche dopo
+    # che l'annuncio è sparito dal portale). La colonna 'Status' nel foglio
+    # permette a Paolo di filtrarli a vista.
     listings_rows = (
         sb.table("listings")
         .select("id, url, portal, advertiser_name, microzone, address, "
                 "price_eur, expenses_eur, total_eur, surface_m2, rooms, "
                 "first_seen_at, published_at, status")
         .eq("advertiser_type", "private")
-        .eq("status", "active")
         .order("first_seen_at", desc=True)
         .limit(limit)
         .execute()
@@ -276,7 +286,8 @@ def _sync_via_service_account(listings_rows: list[dict],
         for row_idx, l, phone in updates:
             row = _listing_row(l, phone)
             for col_idx, val in enumerate(row):
-                if col_idx == CONTACTED_COL_IDX:
+                # Skip TUTTE le colonne user-edited (Contattato, Status)
+                if col_idx in USER_EDITED_IDX:
                     continue
                 if val == "":
                     continue
