@@ -103,12 +103,17 @@ function headersMatch(a, b) {
 }
 
 /**
- * Riallinea l'header al nuovo schema preservando i dati delle vecchie
- * colonne (match by name, case-insensitive). Gestisce sia ESTENSIONE
- * (aggiunta colonne) sia RIDUZIONE (rimozione colonne) sia RIORDINO.
+ * Riallinea l'header al nuovo schema preservando i dati esistenti
+ * (match by name, case-insensitive). Gestisce ESTENSIONE, RIDUZIONE
+ * e RIORDINO senza mai manipolare il numero di colonne fisico del
+ * foglio (più stabile, no edge case insertColumns/deleteColumns).
  *
  * Le colonne presenti in vecchio ma NON in nuovo vengono SCARTATE.
  * Le colonne presenti in nuovo ma NON in vecchio sono lasciate vuote.
+ *
+ * Le eventuali colonne fisiche in eccesso vengono solo svuotate
+ * (clearContent), così il foglio rimane stabile e non perde
+ * formattazione/frozenRows.
  */
 function migrateHeader(sheet, currentHeader, newColumns) {
   const lastRow = sheet.getLastRow();
@@ -117,37 +122,43 @@ function migrateHeader(sheet, currentHeader, newColumns) {
 
   // mapping vecchio → posizione nel nuovo (-1 se non c'è = colonna scartata)
   const oldIdxToNewIdx = {};
-  currentHeader.forEach((h, oldIdx) => {
-    const matchIdx = newColumns.findIndex(
-      c => String(c).toLowerCase().trim() === String(h).toLowerCase().trim()
-    );
+  currentHeader.forEach(function(h, oldIdx) {
+    var matchIdx = -1;
+    for (var i = 0; i < newColumns.length; i++) {
+      if (String(newColumns[i]).toLowerCase().trim() === String(h).toLowerCase().trim()) {
+        matchIdx = i; break;
+      }
+    }
     if (matchIdx >= 0) oldIdxToNewIdx[oldIdx] = matchIdx;
   });
 
   // Carica i dati esistenti
-  const oldData = numDataRows > 0
-    ? sheet.getRange(2, 1, numDataRows, oldColCount).getValues()
-    : [];
-  const newData = oldData.map(oldRow => {
-    const newRow = new Array(newColumns.length).fill('');
-    Object.keys(oldIdxToNewIdx).forEach(oldIdx => {
+  var oldData = [];
+  if (numDataRows > 0 && oldColCount > 0) {
+    oldData = sheet.getRange(2, 1, numDataRows, oldColCount).getValues();
+  }
+
+  // Costruisco i nuovi dati riallineati
+  var newData = oldData.map(function(oldRow) {
+    var newRow = new Array(newColumns.length).fill('');
+    for (var oldIdx in oldIdxToNewIdx) {
       newRow[oldIdxToNewIdx[oldIdx]] = oldRow[Number(oldIdx)];
-    });
+    }
     return newRow;
   });
 
-  // Pulisce il foglio (rimuove anche eventuali colonne extra)
-  sheet.clear();
-  // Se il foglio ha più colonne del nuovo schema, riduci la maxColumns
-  const maxCols = sheet.getMaxColumns();
-  if (maxCols > newColumns.length) {
-    sheet.deleteColumns(newColumns.length + 1, maxCols - newColumns.length);
-  } else if (maxCols < newColumns.length) {
-    sheet.insertColumnsAfter(maxCols, newColumns.length - maxCols);
-  }
-  sheet.getRange(1, 1, 1, newColumns.length).setValues([newColumns])
+  // STRATEGIA SAFE: clearContents (no clear formatting o struttura)
+  // Poi riscrivo header + dati. Le colonne fisiche in eccesso (se ce ne
+  // sono) restano vuote, non vengono cancellate fisicamente. È OK.
+  sheet.clearContents();
+
+  // Header
+  sheet.getRange(1, 1, 1, newColumns.length).setValues([newColumns]);
+  sheet.getRange(1, 1, 1, newColumns.length)
        .setFontWeight('bold').setBackground('#E8F5E9');
   sheet.setFrozenRows(1);
+
+  // Dati
   if (newData.length > 0) {
     sheet.getRange(2, 1, newData.length, newColumns.length).setValues(newData);
   }
