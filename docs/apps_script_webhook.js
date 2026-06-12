@@ -31,7 +31,7 @@
 const TAB_NAME = 'Privati';
 // Colonne MODIFICATE A MANO da Paolo: non sovrascriverle mai in update.
 // Il bot le scrive solo per le righe NUOVE (primo append).
-const USER_EDITED_COLS = ['Contattato', 'Status'];
+const USER_EDITED_COLS = ['Contattato'];
 const URL_COL_NAME = 'URL';
 
 function doPost(e) {
@@ -69,7 +69,7 @@ function getOrCreateSheet(columns) {
     sheet.setFrozenRows(1);
     return sheet;
   }
-  // Esiste già: verifico se l'header corrisponde a `columns`.
+  // Esiste già: verifico se l'header corrisponde esattamente a `columns`.
   const lastCol = sheet.getLastColumn();
   const currentHeader = lastCol > 0
     ? sheet.getRange(1, 1, 1, lastCol).getValues()[0]
@@ -84,25 +84,38 @@ function getOrCreateSheet(columns) {
     return sheet;
   }
 
-  // Se l'header esistente ha MENO colonne del nuovo → schema migration:
-  // - sposta a destra eventuali colonne disallineate
-  // - aggiunge le colonne mancanti
-  // - PRESERVA i dati esistenti
-  if (currentHeader.length < columns.length) {
+  // Se l'header esistente è DIVERSO dal nuovo schema (più, meno o ordine
+  // differente) → migrate. PRESERVA i dati esistenti grazie al match by name.
+  if (!headersMatch(currentHeader, columns)) {
     migrateHeader(sheet, currentHeader, columns);
   }
   return sheet;
 }
 
+function headersMatch(a, b) {
+  if (a.length !== b.length) return false;
+  for (let i = 0; i < a.length; i++) {
+    if (String(a[i]).trim().toLowerCase() !== String(b[i]).trim().toLowerCase()) {
+      return false;
+    }
+  }
+  return true;
+}
+
 /**
- * Inserisce nuove colonne in posizioni corrispondenti al nuovo schema
- * preservando i dati delle vecchie colonne (match by name, case-insensitive).
+ * Riallinea l'header al nuovo schema preservando i dati delle vecchie
+ * colonne (match by name, case-insensitive). Gestisce sia ESTENSIONE
+ * (aggiunta colonne) sia RIDUZIONE (rimozione colonne) sia RIORDINO.
+ *
+ * Le colonne presenti in vecchio ma NON in nuovo vengono SCARTATE.
+ * Le colonne presenti in nuovo ma NON in vecchio sono lasciate vuote.
  */
 function migrateHeader(sheet, currentHeader, newColumns) {
   const lastRow = sheet.getLastRow();
   const numDataRows = Math.max(0, lastRow - 1);
+  const oldColCount = currentHeader.length;
 
-  // mapping vecchio → posizione nel nuovo
+  // mapping vecchio → posizione nel nuovo (-1 se non c'è = colonna scartata)
   const oldIdxToNewIdx = {};
   currentHeader.forEach((h, oldIdx) => {
     const matchIdx = newColumns.findIndex(
@@ -111,20 +124,27 @@ function migrateHeader(sheet, currentHeader, newColumns) {
     if (matchIdx >= 0) oldIdxToNewIdx[oldIdx] = matchIdx;
   });
 
-  // Costruisco i nuovi dati di tutta la matrice (header + dati)
+  // Carica i dati esistenti
   const oldData = numDataRows > 0
-    ? sheet.getRange(2, 1, numDataRows, currentHeader.length).getValues()
+    ? sheet.getRange(2, 1, numDataRows, oldColCount).getValues()
     : [];
   const newData = oldData.map(oldRow => {
     const newRow = new Array(newColumns.length).fill('');
     Object.keys(oldIdxToNewIdx).forEach(oldIdx => {
-      newRow[oldIdxToNewIdx[oldIdx]] = oldRow[oldIdx];
+      newRow[oldIdxToNewIdx[oldIdx]] = oldRow[Number(oldIdx)];
     });
     return newRow;
   });
 
-  // Pulisco tutto il foglio e riscrivo (header + dati)
+  // Pulisce il foglio (rimuove anche eventuali colonne extra)
   sheet.clear();
+  // Se il foglio ha più colonne del nuovo schema, riduci la maxColumns
+  const maxCols = sheet.getMaxColumns();
+  if (maxCols > newColumns.length) {
+    sheet.deleteColumns(newColumns.length + 1, maxCols - newColumns.length);
+  } else if (maxCols < newColumns.length) {
+    sheet.insertColumnsAfter(maxCols, newColumns.length - maxCols);
+  }
   sheet.getRange(1, 1, 1, newColumns.length).setValues([newColumns])
        .setFontWeight('bold').setBackground('#E8F5E9');
   sheet.setFrozenRows(1);

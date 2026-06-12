@@ -31,16 +31,16 @@ from typing import Optional
 logger = logging.getLogger("sheets")
 
 # Colonne del worksheet "Privati" (ordine = colonne A, B, C, ...)
+# 2026-06-13: snellito → rimossi Portale, Spese, Totale, Status
+# (Status non funzionava bene: mark_stale rilevava falsi positivi quando
+# il cron Immobiliare era bloccato. Tutto active per definizione, l'utente
+# verifica manualmente nei pochi casi).
 COLUMNS = [
     "URL",
-    "Portale",
-    "Status",          # active = ancora sul portale  |  removed = sparito da >48h
     "Inserzionista",
     "Telefono",
     "Zona",
     "Prezzo €/mese",
-    "Spese €/mese",
-    "Totale €/mese",
     "Mq",
     "Locali",
     "Indirizzo",
@@ -53,7 +53,7 @@ CONTACTED_COL_IDX = COLUMNS.index("Contattato")
 # Colonne user-edited: il bot NON le sovrascrive mai in update
 # (Apps Script Webhook gestisce questa logica server-side; per il fallback
 # Service Account, ci pensa _sync_via_service_account a saltarle).
-USER_EDITED_COLS = ("Contattato", "Status")
+USER_EDITED_COLS = ("Contattato",)
 USER_EDITED_IDX = tuple(COLUMNS.index(c) for c in USER_EDITED_COLS)
 
 SHEET_TAB_NAME = "Privati"
@@ -127,19 +127,15 @@ def _ensure_worksheet(sh, tab_name: str):
 
 def _listing_row(listing: dict, contact_phone: Optional[str] = None,
                  contacted: str = "") -> list:
-    """Costruisce la riga ordinata secondo COLUMNS."""
+    """Costruisce la riga ordinata secondo COLUMNS (11 colonne snelle)."""
     seen = (listing.get("first_seen_at") or "")[:16].replace("T", " ")
     pub = (listing.get("published_at") or "")[:16].replace("T", " ")
     return [
         listing.get("url") or "",
-        listing.get("portal") or "",
-        listing.get("status") or "",
         listing.get("advertiser_name") or "",
         contact_phone or "",
         listing.get("microzone") or "",
         listing.get("price_eur") or "",
-        listing.get("expenses_eur") or "",
-        listing.get("total_eur") or "",
         listing.get("surface_m2") or "",
         listing.get("rooms") or "",
         listing.get("address") or "",

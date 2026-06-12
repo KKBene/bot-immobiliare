@@ -58,6 +58,9 @@ def test_notify_skips_non_private(monkeypatch, listing_priv):
 def test_send_telegram_calls_api(monkeypatch):
     monkeypatch.setenv("TELEGRAM_BOT_TOKEN", "FAKE_TOKEN")
     monkeypatch.setenv("TELEGRAM_CHAT_ID", "12345")
+    # Vuoto le env specifiche per kind così cade sul fallback
+    monkeypatch.delenv("TELEGRAM_CHAT_ID_LISTINGS", raising=False)
+    monkeypatch.delenv("TELEGRAM_CHAT_ID_ANOMALIES", raising=False)
     with patch("src.notify.requests.post") as mock_post:
         mock_post.return_value.status_code = 200
         assert send_telegram("hi") is True

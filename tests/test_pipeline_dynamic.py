@@ -181,15 +181,18 @@ def test_stops_when_threshold_crossed_mid_paging(monkeypatch):
 # ============================================================================
 
 def test_mark_stale_calls_supabase_correctly(monkeypatch):
-    """Verifica che la chiamata UPDATE includa il cutoff giusto e neq status."""
+    """Verifica che mark_stale colpisca SOLO le agency (no privati) con
+    last_seen_at < cutoff e status != 'removed'."""
     sb = MagicMock()
     chain = MagicMock()
-    sb.table.return_value.update.return_value.lt.return_value.neq.return_value.execute.return_value = chain
+    # Catena: table.update.lt.neq.eq.execute
+    sb.table.return_value.update.return_value.lt.return_value \
+        .neq.return_value.eq.return_value.execute.return_value = chain
     chain.data = [{"id": 1}, {"id": 2}]
 
     n = mark_stale_listings(sb, hours=48)
     assert n == 2
     sb.table.assert_called_with("listings")
     sb.table().update.assert_called_with({"status": "removed"})
-    # lt cutoff è ~48h fa: verifico almeno che neq status="removed" sia chiamato
     sb.table().update().lt().neq.assert_called_with("status", "removed")
+    sb.table().update().lt().neq().eq.assert_called_with("advertiser_type", "agency")

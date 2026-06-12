@@ -49,32 +49,27 @@ def test_enabled_with_json_env(monkeypatch):
 def test_listing_row_uses_correct_order():
     listing = {
         "url": "https://www.idealista.it/immobile/1/",
-        "portal": "idealista",
-        "status": "active",
         "advertiser_name": "Marino",
         "microzone": "Sempione",
         "address": "Via X",
         "price_eur": 950,
-        "expenses_eur": 150,
-        "total_eur": 1100,
         "surface_m2": 35,
         "rooms": "1",
         "first_seen_at": "2026-06-03T20:30:00",
     }
     row = _listing_row(listing, contact_phone="+393357420063", contacted="No")
-    # Riga deterministica: name della colonna è chiave per non rompere quando
-    # si aggiungono altre colonne in mezzo.
     from src.sheets import COLUMNS
     by_col = dict(zip(COLUMNS, row))
     assert by_col["URL"] == listing["url"]
-    assert by_col["Portale"] == "idealista"
-    assert by_col["Status"] == "active"
     assert by_col["Inserzionista"] == "Marino"
     assert by_col["Telefono"] == "+393357420063"
     assert by_col["Prezzo €/mese"] == 950
-    assert by_col["Spese €/mese"] == 150
-    assert by_col["Totale €/mese"] == 1100
+    assert by_col["Mq"] == 35
+    assert by_col["Locali"] == "1"
     assert by_col["Contattato"] == "No"
+    # Niente più colonne rimosse
+    for removed_col in ("Portale", "Spese €/mese", "Totale €/mese", "Status"):
+        assert removed_col not in by_col
 
 
 def test_sync_noop_when_not_configured(monkeypatch):
@@ -99,10 +94,10 @@ def test_sync_appends_new_and_updates_existing(monkeypatch):
     # listings query
     listings_resp = MagicMock()
     listings_resp.data = [
-        {"id": 1, "url": "https://x.it/1", "portal": "idealista", "status": "active",
+        {"id": 1, "url": "https://x.it/1",
          "advertiser_name": "A", "microzone": "Z", "price_eur": 100,
          "first_seen_at": "2026-06-03T00:00:00"},
-        {"id": 2, "url": "https://x.it/2", "portal": "idealista", "status": "active",
+        {"id": 2, "url": "https://x.it/2",
          "advertiser_name": "B", "microzone": "Z", "price_eur": 200,
          "first_seen_at": "2026-06-03T00:00:00"},
     ]
