@@ -23,7 +23,7 @@ jobs:
   cycle:
     # Cambia a `[self-hosted, macbook]` quando avrai il runner sul Mac
     runs-on: ubuntu-latest
-    timeout-minutes: 30
+    timeout-minutes: 45  # raised da 30: lo scrape può durare 25-35 min con tanti privati nuovi
     env:
       SUPABASE_URL: ${{ secrets.SUPABASE_URL }}
       SUPABASE_SERVICE_KEY: ${{ secrets.SUPABASE_SERVICE_KEY }}
@@ -53,4 +53,7 @@ jobs:
         run: pip install -r requirements-bot.txt
 
       - name: Run cycle (paginazione dinamica + mark stale)
-        run: python scripts/run_cycle.py --max-pages 15 --stale-hours 48
+        # max-pages ridotto da 15→8: la paginazione dinamica ferma comunque
+        # prima quando il backlog è esaurito. 8 pagine ≈ 240 annunci max,
+        # margine 4× sul giornaliero (~60/giorno) → mai persi nuovi.
+        run: python scripts/run_cycle.py --max-pages 8 --stale-hours 48

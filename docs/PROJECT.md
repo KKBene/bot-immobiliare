@@ -19,6 +19,17 @@
 
 ---
 
+## 📜 Storico modifiche
+
+Vedi [`CHANGELOG.md`](../CHANGELOG.md) per la cronologia dettagliata delle release.
+
+Ultime release rilevanti:
+- **2026-06-17**: Fix timeout Actions (cycle troppo lungo → notifiche perse) — soft deadline 25 min
+- **2026-06-13**: Schema foglio snellito a 11 colonne + Apps Script "universal"
+- **2026-06-10**: Routing notifiche Telegram per tipo (annunci vs anomalie)
+- **2026-06-08**: Sync foglio Google ad ogni cycle (Apps Script webhook)
+- **2026-06-04**: Enrich detail Immobiliare + parser numeri offuscati
+
 ## 📊 Stato d'arte
 
 | Step | Cosa | Test | Stato |

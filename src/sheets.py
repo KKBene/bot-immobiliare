@@ -145,6 +145,105 @@ def _listing_row(listing: dict, contact_phone: Optional[str] = None,
     ]
 
 
+def pull_contacted_status_from_sheet(sb) -> dict:
+    """Legge il foglio (CSV pubblico, no auth) e salva in DB le righe
+    con Contattato='Sì' come `listings.manually_contacted_at = now()`.
+
+    Le righe con Contattato='No' (o vuoto) → NULL.
+    Restituisce {pulled, marked_yes, marked_no}.
+
+    Sicuro da chiamare PRIMA di ogni sync: prende lo stato fresco dal foglio
+    così se l'utente ha appena messo "Sì" lo salviamo, e se ricreo la tab i
+    "Sì" tornano dal DB.
+    """
+    sheet_id = os.environ.get("GOOGLE_SHEET_ID")
+    if not sheet_id:
+        return {"pulled": 0, "reason": "no_sheet_id"}
+
+    import csv
+    import io
+    from datetime import datetime, timezone
+    import requests
+
+    csv_url = (
+        f"https://docs.google.com/spreadsheets/d/{sheet_id}"
+        f"/gviz/tq?tqx=out:csv&sheet=Privati"
+    )
+    try:
+        r = requests.get(csv_url, timeout=30)
+        r.raise_for_status()
+    except Exception as e:
+        logger.warning(f"pull contacted CSV failed: {e}")
+        return {"pulled": 0, "reason": "fetch_fail", "error": str(e)}
+
+    rows = list(csv.reader(io.StringIO(r.text)))
+    if len(rows) < 2:
+        return {"pulled": 0, "reason": "empty_sheet"}
+
+    header = rows[0]
+    try:
+        url_idx = header.index("URL")
+        contacted_idx = header.index("Contattato")
+    except ValueError:
+        logger.warning(f"pull contacted: header mancante URL o Contattato → {header}")
+        return {"pulled": 0, "reason": "bad_header", "header": header}
+
+    # Mappo URL → contacted status
+    sheet_state: dict[str, str] = {}
+    for row in rows[1:]:
+        if len(row) <= max(url_idx, contacted_idx):
+            continue
+        url = (row[url_idx] or "").strip()
+        if not url:
+            continue
+        val = (row[contacted_idx] or "").strip().lower()
+        # "sì", "si", "yes" tutti contano come contattato; ignoro datetime
+        # rispettando lo storico (es. "2026-06-05 17:17" che il vecchio bug
+        # ha scritto: NON è "sì" → trattato come no).
+        is_yes = val in ("sì", "si", "yes", "y", "x")
+        sheet_state[url] = "yes" if is_yes else "no"
+
+    if not sheet_state:
+        return {"pulled": 0, "reason": "no_rows_with_url"}
+
+    # Carico gli ID dei listings di interesse (chunk per URL)
+    urls = list(sheet_state.keys())
+    listing_url_to_id: dict[str, int] = {}
+    for chunk_start in range(0, len(urls), 100):
+        chunk = urls[chunk_start:chunk_start + 100]
+        rs = sb.table("listings").select("id, url, manually_contacted_at") \
+            .in_("url", chunk).execute().data
+        for r in rs:
+            listing_url_to_id[r["url"]] = r
+
+    marked_yes = 0
+    marked_no = 0
+    now_iso = datetime.now(timezone.utc).isoformat()
+    for url, status in sheet_state.items():
+        listing = listing_url_to_id.get(url)
+        if not listing:
+            continue
+        current = listing.get("manually_contacted_at")
+        if status == "yes" and not current:
+            sb.table("listings").update({"manually_contacted_at": now_iso}) \
+                .eq("id", listing["id"]).execute()
+            marked_yes += 1
+        elif status == "no" and current:
+            sb.table("listings").update({"manually_contacted_at": None}) \
+                .eq("id", listing["id"]).execute()
+            marked_no += 1
+
+    logger.info(
+        f"[sheet pull] {len(sheet_state)} URL letti, "
+        f"{marked_yes} marcati Sì, {marked_no} tolti Sì"
+    )
+    return {
+        "pulled": len(sheet_state),
+        "marked_yes": marked_yes,
+        "marked_no": marked_no,
+    }
+
+
 def _load_private_listings(sb, limit: int) -> tuple[list[dict], dict]:
     """Estrae TUTTI i privati attivi dal DB + mapping listing→phone.
 
@@ -162,7 +261,7 @@ def _load_private_listings(sb, limit: int) -> tuple[list[dict], dict]:
         sb.table("listings")
         .select("id, url, portal, advertiser_name, microzone, address, "
                 "price_eur, expenses_eur, total_eur, surface_m2, rooms, "
-                "first_seen_at, published_at, status")
+                "first_seen_at, published_at, status, manually_contacted_at")
         .eq("advertiser_type", "private")
         .order("first_seen_at", desc=True)
         .limit(limit)
@@ -221,10 +320,19 @@ def _sync_via_webhook(listings_rows: list[dict], listing_to_phone: dict) -> dict
     if not url:
         return {"added": 0, "updated": 0, "skipped": 0, "reason": "not_configured"}
 
+    def _initial_contacted(l: dict) -> str:
+        # Se in DB risulta già contattato manualmente, riporta "Sì" nel foglio
+        # (così se l'utente cancella la tab i Sì tornano dal DB).
+        return "Sì" if l.get("manually_contacted_at") else "No"
+
     payload = {
         "columns": COLUMNS,
         "rows": [
-            _listing_row(l, listing_to_phone.get(l["id"], ""))
+            _listing_row(
+                l,
+                listing_to_phone.get(l["id"], ""),
+                contacted=_initial_contacted(l),
+            )
             for l in listings_rows
             if l.get("url")
         ],
@@ -305,12 +413,23 @@ def sync_private_listings(sb, *, limit: int = 1000) -> dict:
     Include anche privati SENZA phone (colonna telefono vuota).
     Preserva la colonna 'Contattato' (modificata a mano dal cliente).
 
+    PRIMA del sync: legge il foglio (CSV pubblico) e salva i Sì in DB.
+    Così se in futuro la tab viene ricreata, i Sì tornano automaticamente.
+
     Sceglie automaticamente Apps Script Webhook (preferito) o Service Account.
     Idempotente: dedup su URL.
     """
     if not is_enabled():
         logger.info("Google Sheets non configurato → skip sync")
         return {"added": 0, "updated": 0, "skipped": 0, "reason": "not_configured"}
+
+    # Backup pre-sync: leggi Contattato dal foglio e salva in DB
+    try:
+        pull_stats = pull_contacted_status_from_sheet(sb)
+        if pull_stats.get("marked_yes") or pull_stats.get("marked_no"):
+            logger.info(f"[sync] pre-sync pull: {pull_stats}")
+    except Exception as e:
+        logger.warning(f"pre-sync pull failed (non-bloccante): {e}")
 
     listings_rows, listing_to_phone = _load_private_listings(sb, limit)
 

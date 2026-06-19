@@ -12,6 +12,7 @@ from src.sheets import (
     URL_COL_IDX,
     _listing_row,
     is_enabled,
+    pull_contacted_status_from_sheet,
     sync_private_listings,
 )
 
@@ -82,6 +83,75 @@ def test_sync_noop_when_not_configured(monkeypatch):
     assert result["added"] == 0
     assert "not_configured" in result.get("reason", "")
     sb.table.assert_not_called()
+
+
+def test_pull_contacted_marks_yes_to_db(monkeypatch):
+    """Se nel foglio c'è 'Sì' → manually_contacted_at popolato in DB."""
+    monkeypatch.setenv("GOOGLE_SHEET_ID", "FAKE_SHEET")
+
+    # Mock CSV response del foglio
+    csv_body = (
+        "URL,Inserzionista,Telefono,Zona,Prezzo €/mese,Mq,Locali,Indirizzo,"
+        "Pubblicato il,Visto il,Contattato\n"
+        "https://x.it/1,A,+391,Z,100,30,2,Via X,2026-06-12,2026-06-12,Sì\n"
+        "https://x.it/2,B,+392,Z,200,40,3,Via Y,2026-06-12,2026-06-12,No\n"
+        "https://x.it/3,C,+393,Z,300,50,4,Via Z,2026-06-12,2026-06-12,sì\n"
+    )
+
+    mock_csv = MagicMock()
+    mock_csv.status_code = 200
+    mock_csv.text = csv_body
+    mock_csv.raise_for_status = lambda: None
+    # Patch requests.get inside the function
+    with patch("requests.get", return_value=mock_csv):
+        sb = MagicMock()
+        # mock listings.select(...).in_("url", chunk).execute()
+        listings_in_db = [
+            {"id": 1, "url": "https://x.it/1", "manually_contacted_at": None},
+            {"id": 2, "url": "https://x.it/2", "manually_contacted_at": None},
+            {"id": 3, "url": "https://x.it/3", "manually_contacted_at": None},
+        ]
+        in_resp = MagicMock()
+        in_resp.data = listings_in_db
+        sb.table.return_value.select.return_value.in_.return_value.execute.return_value = in_resp
+
+        # mock update chain
+        update_resp = MagicMock()
+        update_resp.data = [{"id": 1}]
+        sb.table.return_value.update.return_value.eq.return_value.execute.return_value = update_resp
+
+        result = pull_contacted_status_from_sheet(sb)
+        assert result["pulled"] == 3
+        assert result["marked_yes"] == 2  # "Sì" e "sì"
+        assert result["marked_no"] == 0
+
+
+def test_pull_contacted_clears_no_when_was_yes(monkeypatch):
+    """Se nel foglio l'utente toglie il Sì (mette No) → cleared in DB."""
+    monkeypatch.setenv("GOOGLE_SHEET_ID", "FAKE_SHEET")
+
+    csv_body = (
+        "URL,Inserzionista,Telefono,Zona,Prezzo €/mese,Mq,Locali,Indirizzo,"
+        "Pubblicato il,Visto il,Contattato\n"
+        "https://x.it/1,A,+391,Z,100,30,2,Via X,2026-06-12,2026-06-12,No\n"
+    )
+
+    mock_csv = MagicMock()
+    mock_csv.status_code = 200
+    mock_csv.text = csv_body
+    mock_csv.raise_for_status = lambda: None
+    with patch("requests.get", return_value=mock_csv):
+        sb = MagicMock()
+        # Era stato marcato in DB precedente
+        in_resp = MagicMock()
+        in_resp.data = [{
+            "id": 1, "url": "https://x.it/1",
+            "manually_contacted_at": "2026-06-10T10:00:00+00:00"
+        }]
+        sb.table.return_value.select.return_value.in_.return_value.execute.return_value = in_resp
+        sb.table.return_value.update.return_value.eq.return_value.execute.return_value = MagicMock()
+        result = pull_contacted_status_from_sheet(sb)
+        assert result["marked_no"] == 1
 
 
 def test_sync_appends_new_and_updates_existing(monkeypatch):

@@ -329,26 +329,46 @@ def run_cycle(
     max_pages: int = DEFAULT_MAX_PAGES,
     city: str = "milano",
     stale_hours: int = 48,
+    soft_deadline_minutes: int = 25,
 ) -> CycleStats:
     """Master cycle: scrape paginato dinamico + mark stale + anomaly check.
 
+    `soft_deadline_minutes`: se il cycle supera questa soglia, salta il portale
+    successivo e va dritto a finalize+save. Previene il timeout duro Actions
+    (45 min) che cancellerebbe tutto senza save_cycle_run.
+
     Alla fine del cycle:
-      - salva una riga in cycle_runs (audit)
+      - salva una riga in cycle_runs (audit) anche su soft-deadline
       - rileva anomalie (portale fermo, errori, ecc.)
       - manda alert Telegram se anomalie presenti
     """
+    import time
+    start_mono = time.monotonic()
     sb = client()
     stats = CycleStats()
+
+    def _budget_left() -> float:
+        return soft_deadline_minutes * 60 - (time.monotonic() - start_mono)
+
     try:
         cycle_idealista(sb, max_pages=max_pages, city=city, stats=stats)
     except Exception as e:
         stats.errors.append(f"idealista cycle aborted: {e}")
         logger.exception("idealista cycle aborted")
-    try:
-        cycle_immobiliare(sb, max_pages=max_pages, city=city, stats=stats)
-    except Exception as e:
-        stats.errors.append(f"immobiliare cycle aborted: {e}")
-        logger.exception("immobiliare cycle aborted")
+
+    if _budget_left() > 60:  # almeno 1 min per Immobiliare
+        try:
+            cycle_immobiliare(sb, max_pages=max_pages, city=city, stats=stats)
+        except Exception as e:
+            stats.errors.append(f"immobiliare cycle aborted: {e}")
+            logger.exception("immobiliare cycle aborted")
+    else:
+        stats.errors.append(
+            f"immobiliare skipped: soft deadline esaurita "
+            f"(rimasti {_budget_left():.0f}s)"
+        )
+        logger.warning("immobiliare cycle skippato per soft deadline")
+
     try:
         n_removed = mark_stale_listings(sb, hours=stale_hours)
         stats.portal_counts.setdefault("_global", {})["marked_removed"] = n_removed
