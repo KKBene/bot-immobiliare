@@ -79,11 +79,11 @@ Nel repo GitHub appena creato:
 
 | Nome | Valore |
 |---|---|
-| `SUPABASE_URL` | `https://wicujbscimgxiprodllk.supabase.co` |
-| `SUPABASE_SERVICE_KEY` | `sb_secret_Ti8ort0cmR7nxZgfvUHEXQ_zIJhUJnH` |
-| `SUPABASE_ANON_KEY` | `sb_publishable_QRAQU_JvRd4TNgO0DAMA8Q_qtko58SU` |
-| `TELEGRAM_BOT_TOKEN` | `8722333267:AAGKI1g9Z9bvA1nkADuAf9HEwc872Ja7iio` |
-| `TELEGRAM_CHAT_ID` | `1243074559` |
+| `SUPABASE_URL` | dal `.env` locale |
+| `SUPABASE_SERVICE_KEY` | dal `.env` locale (`sb_secret_…`) |
+| `SUPABASE_ANON_KEY` | dal `.env` locale (`sb_publishable_…`) |
+| `TELEGRAM_BOT_TOKEN` | dal `.env` locale |
+| `TELEGRAM_CHAT_ID` | dal `.env` locale |
 
 3. **Settings** → **Actions** → **General** → conferma che "Allow all actions" sia attivo
 4. **Actions** tab → **scrape-cycle** workflow → **Run workflow** (manualmente per test)
@@ -106,8 +106,8 @@ Da quel momento, il cron gira ogni 3h da solo.
 5. **Secrets**: clicca, e incolla questo (con i tuoi valori):
 
 ```toml
-SUPABASE_URL = "https://wicujbscimgxiprodllk.supabase.co"
-SUPABASE_SERVICE_KEY = "sb_secret_Ti8ort0cmR7nxZgfvUHEXQ_zIJhUJnH"
+SUPABASE_URL = "https://<project-id>.supabase.co"        # dal .env
+SUPABASE_SERVICE_KEY = "sb_secret_..."                    # dal .env
 DASHBOARD_PASSWORD = "scegli-una-password-forte"
 ```
 
