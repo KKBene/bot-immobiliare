@@ -4,6 +4,24 @@ Storico delle modifiche significative al bot. Formato: `[versione/data] cosa è 
 
 ---
 
+## 2026-06-22 — BirdProxies residenziali IT 🐦
+
+**Problema risolto**: dal 20/06 ca. Scrapfly free tier (1000 credit) esaurito → 429 ogni request. Su Actions, fallback `curl_cffi` diretto blocccato da DataDome (IP datacenter Microsoft) → 403 sia su Idealista che Immobiliare. Cycle id=50 (22/06): 0 listings scraped, 3 anomalie CRITICAL.
+
+**Fix**: integrato **BirdProxies** (pool residenziale italiano sticky 1h) come provider prioritario in `src/proxy.py`. Session ID generato random per ogni request → IP rotation automatica.
+
+**Nuovo ordine smart_get**: BirdProxies → Scrapfly → Bright Data → curl_cffi diretto.
+
+**Env vars**:
+- `BIRDPROXIES_ENABLED=true` → attiva il provider
+- `BIRDPROXIES_HOST/PORT/PASSWORD` → credenziali pool
+
+**Strategia anti-spreco GB**: locale `.env` ha `ENABLED=false` (curl_cffi diretto basta), Actions ha `ENABLED=true` hardcoded nel workflow → il GB lo brucia solo il cron cloud.
+
+**Validato locale**: Idealista 200, Immobiliare 200, IP residenziale IT verificato.
+
+---
+
 ## 2026-06-17 — Fix timeout Actions ⚡
 
 **Problema risolto**: dal 15/06 in poi il cron Actions andava in timeout a 30 min, GitHub cancellava il job, niente cycle_runs salvato, niente notifiche Telegram.

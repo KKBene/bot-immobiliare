@@ -1,13 +1,15 @@
 """Proxy anti-bot — supporto multi-provider con fallback automatico.
 
 Ordine di priorità (se più provider configurati):
-  1. Scrapfly (env `SCRAPFLY_API_KEY`)
-  2. Bright Data Web Unlocker (env `BRIGHTDATA_API_KEY` + `BRIGHTDATA_ZONE`)
-  3. curl_cffi diretto (sempre disponibile, gratis ma 403-prone)
+  1. BirdProxies residenziali IT (env `BIRDPROXIES_ENABLED=true` + `BIRDPROXIES_PASSWORD`)
+  2. Scrapfly (env `SCRAPFLY_API_KEY`)
+  3. Bright Data Web Unlocker (env `BRIGHTDATA_API_KEY` + `BRIGHTDATA_ZONE`)
+  4. curl_cffi diretto (sempre disponibile, gratis ma 403-prone su IP datacenter)
 
 Tutti i provider fanno DataDome bypass + IP italiano residenziale.
 
 Doc:
+  - https://birdproxies.com/en/residential-proxies
   - https://scrapfly.io/docs/scrape-api/getting-started
   - https://docs.brightdata.com/scraping-automation/web-unlocker/quickstart
 """
@@ -16,6 +18,7 @@ from __future__ import annotations
 
 import logging
 import os
+import random
 from typing import Optional
 
 import requests
@@ -27,6 +30,8 @@ logger = logging.getLogger("proxy")
 
 BRIGHTDATA_ENDPOINT = "https://api.brightdata.com/request"
 SCRAPFLY_ENDPOINT = "https://api.scrapfly.io/scrape"
+BIRDPROXIES_DEFAULT_HOST = "residential.birdproxies.com"
+BIRDPROXIES_DEFAULT_PORT = "7777"
 
 
 def is_scrapfly_enabled() -> bool:
@@ -38,6 +43,44 @@ def is_brightdata_enabled() -> bool:
         os.environ.get("BRIGHTDATA_API_KEY")
         and os.environ.get("BRIGHTDATA_ZONE")
     )
+
+
+def is_birdproxies_enabled() -> bool:
+    return (
+        os.environ.get("BIRDPROXIES_ENABLED", "").lower() == "true"
+        and bool(os.environ.get("BIRDPROXIES_PASSWORD"))
+    )
+
+
+def birdproxies_get(
+    url: str,
+    *,
+    country: str = "it",
+    timeout: int = 30,
+    ttl: int = 3600,
+    impersonate: str = "safari17_2_ios",
+    headers: Optional[dict] = None,
+):
+    """Fetch via BirdProxies residential pool (IP italiano sticky 1h)."""
+    pwd = os.environ["BIRDPROXIES_PASSWORD"]
+    host = os.environ.get("BIRDPROXIES_HOST", BIRDPROXIES_DEFAULT_HOST)
+    port = os.environ.get("BIRDPROXIES_PORT", BIRDPROXIES_DEFAULT_PORT)
+    sid = str(random.randint(10_000_000, 99_999_999))
+    user = f"pool-p1-cc-{country}-sid-{sid}-ttl-{ttl}"
+    proxy_url = f"http://{user}:{pwd}@{host}:{port}"
+    h = {"Accept-Language": "it-IT,it;q=0.9"}
+    if headers:
+        h.update(headers)
+    try:
+        return creq.get(
+            url,
+            proxies={"http": proxy_url, "https": proxy_url},
+            impersonate=impersonate,
+            headers=h,
+            timeout=timeout,
+        )
+    except Exception as e:
+        raise TransientError(f"birdproxies error: {e}") from e
 
 
 def scrapfly_get(
@@ -157,12 +200,23 @@ def smart_get(
     timeout: int = 25,
     prefer_proxy: bool = True,
 ) -> requests.Response | creq.Response:
-    """GET con ordine di priorità: Scrapfly → Bright Data → curl_cffi diretto.
+    """GET con ordine di priorità: BirdProxies → Scrapfly → Bright Data → diretto.
 
     Il chiamante può forzare `prefer_proxy=False` per saltare i proxy su
     pagine "facili" (es. listing Idealista che già passa via diretto)
     e risparmiare crediti del proxy.
     """
+    if prefer_proxy and is_birdproxies_enabled():
+        try:
+            r = birdproxies_get(
+                url, timeout=timeout, impersonate=impersonate, headers=headers
+            )
+            if r.status_code != 403:
+                return r
+            logger.warning("birdproxies returned 403, trying next provider")
+        except Exception as e:
+            logger.warning(f"birdproxies fail, prossimo provider: {e}")
+
     if prefer_proxy and is_scrapfly_enabled():
         try:
             return scrapfly_get(url, timeout=timeout)

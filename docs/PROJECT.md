@@ -24,6 +24,7 @@
 Vedi [`CHANGELOG.md`](../CHANGELOG.md) per la cronologia dettagliata delle release.
 
 Ultime release rilevanti:
+- **2026-06-22**: BirdProxies residenziali IT — bypass DataDome 403 su GitHub Actions
 - **2026-06-17**: Fix timeout Actions (cycle troppo lungo → notifiche perse) — soft deadline 25 min
 - **2026-06-13**: Schema foglio snellito a 11 colonne + Apps Script "universal"
 - **2026-06-10**: Routing notifiche Telegram per tipo (annunci vs anomalie)
