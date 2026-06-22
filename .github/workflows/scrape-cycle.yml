@@ -15,8 +15,10 @@ name: scrape-cycle
 
 on:
   schedule:
-    # ogni 3 ore (UTC). GitHub Actions può ritardare di qualche minuto.
-    - cron: "0 */3 * * *"
+    # 3 run/giorno (orari Italia 12:00 / 18:00 / 21:00 in CEST estate).
+    # In CET (inverno) si sposteranno a 11:00 / 17:00 / 20:00 IT — accettabile.
+    # Consumo BirdProxies a regime: ~9 MB/cycle × 3 = 27 MB/giorno → 1 GB ≈ 38gg.
+    - cron: "0 10,16,19 * * *"
   workflow_dispatch:  # trigger manuale
 
 jobs:

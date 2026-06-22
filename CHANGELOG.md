@@ -4,6 +4,18 @@ Storico delle modifiche significative al bot. Formato: `[versione/data] cosa è 
 
 ---
 
+## 2026-06-22 — Cron ridotto a 3 run/giorno ⏰
+
+Da `*/3 ore` (8 cycle/giorno) a **3 cycle/giorno**: 12:00 / 18:00 / 21:00 IT.
+
+**Motivo**: il consumo BirdProxies a regime è ~9 MB/cycle. Con 8 cycle/giorno
+si esaurirebbe il GB di test in ~13 giorni; con 3 cycle/giorno dura **~38 giorni**.
+
+**Copertura**: Milano fa ~4 nuovi privati/giorno → margine 80x sulla capacità
+(8 pagine = 240 listings/cycle). Zero rischio di perdere annunci nel gap.
+
+---
+
 ## 2026-06-22 — BirdProxies residenziali IT 🐦
 
 **Problema risolto**: dal 20/06 ca. Scrapfly free tier (1000 credit) esaurito → 429 ogni request. Su Actions, fallback `curl_cffi` diretto blocccato da DataDome (IP datacenter Microsoft) → 403 sia su Idealista che Immobiliare. Cycle id=50 (22/06): 0 listings scraped, 3 anomalie CRITICAL.
