@@ -33,6 +33,26 @@ SCRAPFLY_ENDPOINT = "https://api.scrapfly.io/scrape"
 BIRDPROXIES_DEFAULT_HOST = "residential.birdproxies.com"
 BIRDPROXIES_DEFAULT_PORT = "7777"
 
+# Sticky session per process: la stessa IP residenziale per tutto il cycle.
+# Evita 403 sulle chiamate AJAX (es. contact-phones Idealista): DataDome
+# riconosce l'IP come "ha già visitato la pagina HTML" e non flagga gli
+# endpoint /ajax/* successivi. Cambio sid solo a nuovo process (cron successivo).
+_BIRDPROXIES_SESSION_SID: Optional[str] = None
+
+
+def _birdproxies_session_sid() -> str:
+    global _BIRDPROXIES_SESSION_SID
+    if _BIRDPROXIES_SESSION_SID is None:
+        _BIRDPROXIES_SESSION_SID = str(random.randint(10_000_000, 99_999_999))
+    return _BIRDPROXIES_SESSION_SID
+
+
+def _birdproxies_rotate_session() -> str:
+    """Forza un nuovo sid (chiamabile su 403 ripetuti per ruotare IP)."""
+    global _BIRDPROXIES_SESSION_SID
+    _BIRDPROXIES_SESSION_SID = str(random.randint(10_000_000, 99_999_999))
+    return _BIRDPROXIES_SESSION_SID
+
 
 def is_scrapfly_enabled() -> bool:
     return bool(os.environ.get("SCRAPFLY_API_KEY"))
@@ -61,11 +81,11 @@ def birdproxies_get(
     impersonate: str = "safari17_2_ios",
     headers: Optional[dict] = None,
 ):
-    """Fetch via BirdProxies residential pool (IP italiano sticky 1h)."""
+    """Fetch via BirdProxies residential pool (IP italiano sticky per process)."""
     pwd = os.environ["BIRDPROXIES_PASSWORD"]
     host = os.environ.get("BIRDPROXIES_HOST", BIRDPROXIES_DEFAULT_HOST)
     port = os.environ.get("BIRDPROXIES_PORT", BIRDPROXIES_DEFAULT_PORT)
-    sid = str(random.randint(10_000_000, 99_999_999))
+    sid = _birdproxies_session_sid()
     user = f"pool-p1-cc-{country}-sid-{sid}-ttl-{ttl}"
     proxy_url = f"http://{user}:{pwd}@{host}:{port}"
     h = {"Accept-Language": "it-IT,it;q=0.9"}
@@ -213,7 +233,15 @@ def smart_get(
             )
             if r.status_code != 403:
                 return r
-            logger.warning("birdproxies returned 403, trying next provider")
+            # IP corrente bruciato → ruota sid una volta e ritenta
+            new_sid = _birdproxies_rotate_session()
+            logger.warning(f"birdproxies 403, ruoto sid e ritento (sid={new_sid})")
+            r = birdproxies_get(
+                url, timeout=timeout, impersonate=impersonate, headers=headers
+            )
+            if r.status_code != 403:
+                return r
+            logger.warning("birdproxies 403 anche dopo rotazione, fallback next provider")
         except Exception as e:
             logger.warning(f"birdproxies fail, prossimo provider: {e}")
 

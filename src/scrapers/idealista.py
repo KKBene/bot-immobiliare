@@ -72,6 +72,10 @@ class IdealistaScraper:
         # appena si fa una chiamata AJAX usando una sessione persistente.
         # Chiamate fresche, una per request, sono 200 OK stabili.
         self._common_headers = {"Accept-Language": "it-IT,it;q=0.9"}
+        # Da giugno 2026 Idealista risponde 403 stabile su /ajax/ads/{id}/contact-phones
+        # (anche da IP residenziali IT). Se vediamo 403, disabilitiamo l'endpoint
+        # per il resto del cycle → fail-fast, niente retry, niente GB sprecati.
+        self._phones_endpoint_broken = False
 
     def _get_raw(self, url: str, headers: Optional[dict] = None, timeout: int = 20):
         """GET via smart_get: Bright Data se configurato, altrimenti curl_cffi.
@@ -240,13 +244,22 @@ class IdealistaScraper:
     def fetch_ad_phones(self, ad_id: str, timeout: int = 15) -> dict:
         """Telefono dell'inserzionista in chiaro (formatted + E.164).
 
-        Risposta tipica:
-          {"phone1":{"formatted":"335 742 0063","number":"+393357420063","type":null},
-           "phone2":null}
+        Fail-fast su 403: da giugno 2026 l'endpoint è hard-blocked anche da IP
+        residenziali → niente retry, niente spreco GB proxy. Dopo il primo 403
+        del cycle, le chiamate successive vengono saltate.
         """
+        if self._phones_endpoint_broken:
+            return {}
         url = PHONES_URL_TEMPLATE.format(ad_id=ad_id)
-        r = self._get(url, headers=self._api_headers(ad_id), timeout=timeout)
-        r.raise_for_status()
+        try:
+            r = self._get_raw(url, headers=self._api_headers(ad_id), timeout=timeout)
+        except Exception:
+            return {}
+        if r.status_code == 403:
+            self._phones_endpoint_broken = True
+            return {}
+        if not (200 <= r.status_code < 300):
+            return {}
         try:
             return r.json()
         except Exception:
