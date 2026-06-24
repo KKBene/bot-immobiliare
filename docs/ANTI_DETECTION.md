@@ -249,4 +249,35 @@ Se Garante chiede "come dimostri il legittimo interesse?":
 
 ---
 
+## 10. Multi-paese (idealista .it / .es / .pt)
+
+La tecnica anti-DataDome di questo scraper (`impersonate="safari17_2_ios"` +
+chiamate **stateless** da IP residenziale) è a livello di **piattaforma**: non è
+specifica per l'Italia, funziona identica sui portali Idealista spagnolo e
+portoghese. Cambia solo lo **slug dell'URL** e l'`Accept-Language`; la struttura
+HTML del listing (`<article data-element-id>`, `.item-price`, `.item-detail`) è
+condivisa tra i tre paesi.
+
+| Paese | Base | Affitto / Alquiler / Arrendar | Vendita / Venta / Comprar | Dettaglio | Accept-Language |
+|---|---|---|---|---|---|
+| 🇮🇹 IT | `idealista.it` | `/affitto-case/{city}-{city}/` | `/vendita-case/{city}-{city}/` | `/immobile/{id}/` | `it-IT` |
+| 🇪🇸 ES | `idealista.es` | `/alquiler-viviendas/{city}-{city}/` | `/venta-viviendas/{city}-{city}/` | `/inmueble/{id}/` | `es-ES` |
+| 🇵🇹 PT | `idealista.pt` | `/arrendar-casas/{city}/` | `/comprar-casas/{city}/` | `/imovel/{id}/` | `pt-PT` |
+
+> ⚠️ In PT lo slug della città è `{city}` (non raddoppiato come in IT/ES). Gli
+> endpoint AJAX contatti seguono lo stesso schema con prefisso lingua
+> (`/pt/ajax/...`, `/es/ajax/...`).
+
+**Verificato (giugno 2026)** con lo stesso profilo/libreria, da IP residenziale:
+- `idealista.pt` — `/comprar-casas/` e `/arrendar-casas/` → `200`, nessun
+  DataDome, 30 annunci/pagina con `data-element-id` + prezzo.
+- `idealista.es` — `/alquiler-viviendas/` → `200`. Come per `.it`, una singola
+  request può occasionalmente prendere un `403` DataDome (è probabilistico): il
+  retry/backoff + circuit-breaker già presenti lo gestiscono.
+
+> Grazie per questo writeup anti-detection — è esattamente ciò che ci ha
+> sbloccato `idealista.pt`. 🙏
+
+---
+
 <p align="center"><em>Aggiornato: 2026-05-29 · Da rivedere a ogni cambio di vettore (Twilio go-live, proxy add, etc.)</em></p>
